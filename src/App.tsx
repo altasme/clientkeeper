@@ -1,13 +1,36 @@
+import { Routes, Route } from "react-router-dom";
+import { MeProvider } from "./lib/MeContext";
+import Layout from "./components/Layout";
+import DashboardPage from "./pages/DashboardPage";
+import LeadsPage from "./pages/LeadsPage";
+import ClientsPage from "./pages/ClientsPage";
+import ClientDetailPage from "./pages/ClientDetailPage";
+import ProjectsPage from "./pages/ProjectsPage";
+import DiscoveryPage from "./pages/DiscoveryPage";
+import PresentationsPage from "./pages/PresentationsPage";
+import OffersPage from "./pages/OffersPage";
+import PaymentsPage from "./pages/PaymentsPage";
+import SettingsPage from "./pages/SettingsPage";
+
 function App() {
   return (
-    <div className="flex min-h-screen items-center justify-center px-6">
-      <div className="text-center">
-        <p className="text-xs font-semibold uppercase tracking-wide text-brand-blue">Altaventures</p>
-        <h1 className="mt-2 text-2xl font-bold text-brand-navy">ClientKeeper</h1>
-        <p className="mt-2 text-sm text-ink/60">Under construction.</p>
-      </div>
-    </div>
-  )
+    <MeProvider>
+      <Routes>
+        <Route element={<Layout />}>
+          <Route path="/" element={<DashboardPage />} />
+          <Route path="/leads" element={<LeadsPage />} />
+          <Route path="/clients" element={<ClientsPage />} />
+          <Route path="/clients/:id" element={<ClientDetailPage />} />
+          <Route path="/projects" element={<ProjectsPage />} />
+          <Route path="/discovery" element={<DiscoveryPage />} />
+          <Route path="/presentations" element={<PresentationsPage />} />
+          <Route path="/offers" element={<OffersPage />} />
+          <Route path="/payments" element={<PaymentsPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
+        </Route>
+      </Routes>
+    </MeProvider>
+  );
 }
 
-export default App
+export default App;
