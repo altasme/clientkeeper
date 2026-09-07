@@ -133,3 +133,9 @@ Two small fixes discovered from real usage, paired with clienthub's CLAUDE.md §
 No change needed to the plan-override endpoint's own logic for either fix — `set-plan.ts` already reads whatever `findPlan()` returns, so it picked up the corrected Basic numbers automatically once the catalog changed. Staff overrides remain unrestricted by design (admins can freely move a client to any plan, including what would be a "downgrade" for a client acting on their own — clienthub's CLAUDE.md §14 covers the client-side half of that rule).
 
 Verified live: setting a project's website URL to `imago.altasme.com` via `POST /api/app/projects/:id/website` correctly stored `https://imago.altasme.com`.
+
+---
+
+## 10. Em dash cleanup, staff-facing copy [2026-09-07]
+
+Per the operator's instruction to remove em dashes everywhere, swept every rendered string (JSX copy, email subjects/bodies, placeholder offer content) in this repo, matching the same pass done in `clienthub` (see its CLAUDE.md §15.2). Fixed: `PaymentsPage.tsx`'s read-only note, `ClientDetailPage.tsx`'s discovery-empty-state line and stage-history reason annotation, the account-setup-reminder email subject in `functions/_lib/email.ts`, and the ₱1,499/Essential placeholder offer copy in `functions/api/app/offers/unlock.ts`. Left alone deliberately: the `"—"` used as a plain "no value" placeholder character in table cells across the Leads/Clients/Discovery/Presentations/Payments/Offers/Dashboard list pages — that's a data-display convention (missing value indicator), not prose punctuation, so it isn't what the em-dash rule targets. Rebuilt, linted, and typechecked afterward (all clean).

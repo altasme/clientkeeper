@@ -34,15 +34,15 @@ function jsonResponse(status: number, body: unknown): Response {
 const PLACEHOLDER_1499_CONTENT = {
   placeholder: true,
   headline: "[Placeholder] Domain + Launch Package",
-  price: "[Placeholder — real ₱1,499 offer copy not yet provided]",
-  body: "This offer's real price and copy have not been supplied yet (source spec open item #5). Do not present this to a client as final — replace this placeholder deliberately once the real content is provided.",
+  price: "[Placeholder: real ₱1,499 offer copy not yet provided]",
+  body: "This offer's real price and copy have not been supplied yet (source spec open item #5). Do not present this to a client as final. Replace this placeholder deliberately once the real content is provided.",
 };
 
 const PLACEHOLDER_ESSENTIAL_CONTENT = {
   placeholder: true,
   headline: "[Placeholder] Essential Plan",
-  price: "[Placeholder — real Essential upsell copy not yet provided]",
-  body: "This offer's real price and copy have not been supplied yet. Do not present this to a client as final — replace this placeholder deliberately once the real content is provided.",
+  price: "[Placeholder: real Essential upsell copy not yet provided]",
+  body: "This offer's real price and copy have not been supplied yet. Do not present this to a client as final. Replace this placeholder deliberately once the real content is provided.",
 };
 
 const OFFER_RULES = {

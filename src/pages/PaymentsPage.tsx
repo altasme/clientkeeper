@@ -17,7 +17,7 @@ export default function PaymentsPage() {
   return (
     <div>
       <h1 className="text-2xl font-bold text-brand-navy">Payments</h1>
-      <p className="mt-1 text-sm text-ink/50">Read-only — every row here comes from clienthub's ganap.net webhook.</p>
+      <p className="mt-1 text-sm text-ink/50">Read-only. Every row here comes from clienthub's ganap.net webhook.</p>
 
       {error && <p className="mt-4 text-sm text-red-600">{error}</p>}
 

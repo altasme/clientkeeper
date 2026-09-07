@@ -207,7 +207,7 @@ export default function ClientDetailPage() {
 
         <Card title="Discovery">
           {!discovery ? (
-            <p className="text-sm text-ink/40">No discovery session yet — the client books this themselves.</p>
+            <p className="text-sm text-ink/40">No discovery session yet. The client books this themselves.</p>
           ) : (
             <>
               {discovery.scheduled_at && (
@@ -338,7 +338,7 @@ export default function ClientDetailPage() {
               {stageHistory.map((h) => (
                 <li key={h.id}>
                   {h.from_stage ? STAGE_LABELS[h.from_stage as Stage] : "(start)"} &rarr; {STAGE_LABELS[h.to_stage as Stage]}
-                  {h.reason && <span className="italic"> — {h.reason}</span>}
+                  {h.reason && <span className="italic"> ({h.reason})</span>}
                   <span className="ml-1 text-ink/40">({new Date(h.created_at).toLocaleString()})</span>
                 </li>
               ))}

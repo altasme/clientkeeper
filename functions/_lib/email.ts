@@ -61,5 +61,5 @@ export function accountReminderEmail(params: { clientName: string; businessName:
     <p><a href="${ACCOUNT_SIGNUP_URL}">Click here to create your account</a>.</p>
   `;
 
-  return { subject: `Complete Your Account Setup — ${businessName || "Altaventures"}`, html };
+  return { subject: `Complete Your Account Setup: ${businessName || "Altaventures"}`, html };
 }
