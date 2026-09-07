@@ -171,6 +171,17 @@ export interface ClientDetail {
   stageHistory: Array<{ id: string; from_stage: string | null; to_stage: string; actor_id: string | null; reason: string | null; created_at: string }>;
   payments: Array<{ id: string; ganap_reference_number: string; external_reference: string | null; amount: number; currency: string; status: string; created_at: string }>;
   activity: Array<{ id: string; type: string; description: string; actor_id: string | null; created_at: string }>;
+  subscriptions: Array<{
+    id: string;
+    item_type: "plan" | "addon";
+    item_id: string;
+    item_name: string;
+    billing_cycle: "one_time" | "annual" | "monthly";
+    amount_php: number;
+    renewal_amount_php: number | null;
+    next_renewal_date: string | null;
+    started_at: string;
+  }>;
 }
 
 export function fetchClientDetail(id: string): Promise<ClientDetail> {
@@ -183,6 +194,14 @@ export function addClientActivity(id: string, note: string): Promise<{ id: strin
 
 export function resendInvite(id: string): Promise<{ ok: true }> {
   return apiFetch(`/api/app/clients/${id}/resend-invite`, { method: "POST" });
+}
+
+export function setClientPlan(id: string, planId: string): Promise<{ ok: true; plan: string }> {
+  return apiFetch(`/api/app/clients/${id}/set-plan`, { method: "POST", body: JSON.stringify({ planId }) });
+}
+
+export function setProjectWebsite(id: string, websiteUrl: string): Promise<{ ok: true; websiteUrl: string | null }> {
+  return apiFetch(`/api/app/projects/${id}/website`, { method: "POST", body: JSON.stringify({ websiteUrl }) });
 }
 
 // ---------------------------------------------------------------------------

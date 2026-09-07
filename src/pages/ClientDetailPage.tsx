@@ -11,11 +11,30 @@ import {
   createPresentation,
   unlockOffer,
   recordOfferDecision,
+  setClientPlan,
+  setProjectWebsite,
   ApiError,
   type ClientDetail,
   type Stage,
 } from "../lib/api";
 import { STAGE_LABELS, NEXT_FORWARD_STAGE, ALL_STAGES } from "../lib/stageLabels";
+
+// Mirrors functions/_lib/pricing.ts's PLAN_CATALOG ids/names for the
+// override dropdown — display-only here, the actual pricing math (amount,
+// renewal date) is computed server-side in set-plan.ts, never trusted from
+// the frontend. Keep in sync if the catalog ever changes.
+const PLAN_OPTIONS: Array<{ id: string; name: string }> = [
+  { id: "starter", name: "Starter Plan (₱299)" },
+  { id: "basic", name: "Basic Plan (₱1,500)" },
+  { id: "essential", name: "Essential Plan (₱1,500 + ₱4,200/yr)" },
+  { id: "business", name: "Business Plan (₱1,500 + ₱10,000/yr)" },
+];
+
+// The website-address field is only editable from post_presentation
+// onward, per the operator's explicit "Post presentation stage moving
+// forward" instruction — a workflow convenience matching when a client
+// would actually have a real site to link, not a security boundary.
+const POST_PRESENTATION_OR_LATER: Stage[] = ["post_presentation", "offer_unlocked", "conversion", "essential_upsell", "completed"];
 
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -68,7 +87,7 @@ export default function ClientDetailPage() {
   if (loading) return <p className="text-sm text-ink/50">Loading&hellip;</p>;
   if (!detail) return <p className="text-sm text-red-600">{error || "Client not found."}</p>;
 
-  const { client, project, discovery, presentation, offers, stageHistory, payments, activity } = detail;
+  const { client, project, discovery, presentation, offers, stageHistory, payments, activity, subscriptions } = detail;
   const nextStage = project ? NEXT_FORWARD_STAGE[project.stage] : undefined;
   const hasOffer1499 = offers.some((o) => o.type === "1499");
   const hasOfferEssential = offers.some((o) => o.type === "essential");
@@ -118,12 +137,19 @@ export default function ClientDetailPage() {
           ) : (
             <>
               <p className="text-lg font-bold text-brand-navy">{STAGE_LABELS[project.stage]}</p>
-              {project.website_url && (
+              {project.website_url && !POST_PRESENTATION_OR_LATER.includes(project.stage) && (
                 <p className="mt-1 text-sm">
                   <a href={project.website_url} target="_blank" rel="noreferrer" className="text-brand-blue hover:underline">
                     {project.website_url}
                   </a>
                 </p>
+              )}
+              {POST_PRESENTATION_OR_LATER.includes(project.stage) && (
+                <WebsiteUrlField
+                  value={project.website_url}
+                  busy={busy}
+                  onSave={(url) => run(() => setProjectWebsite(project.id, url))}
+                />
               )}
               <div className="mt-3 flex flex-wrap gap-2">
                 {nextStage && (
@@ -160,6 +186,14 @@ export default function ClientDetailPage() {
               <OverrideControl busy={busy} onSubmit={(toStage, reason) => run(() => overrideProject(project.id, toStage, reason))} />
             </>
           )}
+        </Card>
+
+        <Card title="Plan">
+          <PlanBlock
+            subscriptions={subscriptions}
+            busy={busy}
+            onSetPlan={(planId) => run(() => setClientPlan(client.id, planId))}
+          />
         </Card>
 
         <Card title="Discovery">
@@ -357,6 +391,110 @@ function OverrideControl({ busy, onSubmit }: { busy: boolean; onSubmit: (toStage
           Cancel
         </button>
       </div>
+    </div>
+  );
+}
+
+function WebsiteUrlField({
+  value,
+  busy,
+  onSave,
+}: {
+  value: string | null;
+  busy: boolean;
+  onSave: (url: string) => void;
+}) {
+  const [local, setLocal] = useState(value || "");
+
+  return (
+    <div className="mt-2">
+      {value && (
+        <p className="mb-1.5 text-sm">
+          <a href={value} target="_blank" rel="noreferrer" className="text-brand-blue hover:underline">
+            {value}
+          </a>
+        </p>
+      )}
+      <div className="flex gap-2">
+        <input
+          type="text"
+          placeholder="https://yourbusiness.com"
+          value={local}
+          onChange={(e) => setLocal(e.target.value)}
+          className="flex-1 rounded border border-ink/15 px-2 py-1.5 text-xs"
+        />
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => onSave(local.trim())}
+          className="rounded-full bg-brand-blue px-3 py-1 text-xs font-semibold text-white hover:bg-[#0b57cc] disabled:opacity-50"
+        >
+          Save
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function PlanBlock({
+  subscriptions,
+  busy,
+  onSetPlan,
+}: {
+  subscriptions: ClientDetail["subscriptions"];
+  busy: boolean;
+  onSetPlan: (planId: string) => void;
+}) {
+  const plan = subscriptions.find((s) => s.item_type === "plan");
+  const addons = subscriptions.filter((s) => s.item_type === "addon");
+  const [selected, setSelected] = useState(plan?.item_id || PLAN_OPTIONS[0].id);
+
+  return (
+    <div>
+      {plan ? (
+        <div className="rounded-lg border border-ink/10 p-3 text-sm">
+          <p className="font-semibold text-brand-navy">{plan.item_name}</p>
+          <p className="text-xs text-ink/60">
+            ₱{plan.amount_php} {plan.billing_cycle !== "one_time" && `/ ${plan.billing_cycle}`}
+          </p>
+          {plan.next_renewal_date && plan.renewal_amount_php && (
+            <p className="mt-1 text-xs text-ink/50">
+              Renews {new Date(plan.next_renewal_date).toLocaleDateString()} &mdash; ₱{plan.renewal_amount_php}
+            </p>
+          )}
+        </div>
+      ) : (
+        <p className="text-sm text-ink/40">No plan on record.</p>
+      )}
+
+      {addons.length > 0 && (
+        <ul className="mt-2 space-y-1 text-xs text-ink/60">
+          {addons.map((a) => (
+            <li key={a.id}>
+              {a.item_name} &mdash; ₱{a.amount_php}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <div className="mt-3 flex gap-2">
+        <select value={selected} onChange={(e) => setSelected(e.target.value)} className="flex-1 rounded border border-ink/15 px-2 py-1.5 text-xs">
+          {PLAN_OPTIONS.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name}
+            </option>
+          ))}
+        </select>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => onSetPlan(selected)}
+          className="rounded-full border border-brand-blue px-3 py-1 text-xs font-semibold text-brand-blue hover:bg-brand-blue hover:text-white disabled:opacity-50"
+        >
+          Set Plan
+        </button>
+      </div>
+      <p className="mt-1.5 text-[11px] text-ink/40">Overrides the client's current plan without charging them &mdash; for corrections or comps.</p>
     </div>
   );
 }

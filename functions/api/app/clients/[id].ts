@@ -124,6 +124,14 @@ export const onRequestGet: PagesFunction<Env, "id"> = async ({ env, params }) =>
     .bind(clientId)
     .all();
 
+  const subscriptionsResult = await db
+    .prepare(
+      `SELECT id, item_type, item_id, item_name, billing_cycle, amount_php, renewal_amount_php, next_renewal_date, started_at
+       FROM subscriptions WHERE client_id = ? AND status = 'active' ORDER BY item_type ASC, started_at DESC`
+    )
+    .bind(clientId)
+    .all();
+
   return jsonResponse(200, {
     client,
     project,
@@ -133,5 +141,6 @@ export const onRequestGet: PagesFunction<Env, "id"> = async ({ env, params }) =>
     stageHistory,
     payments: paymentsResult.results,
     activity: activityResult.results,
+    subscriptions: subscriptionsResult.results,
   });
 };
