@@ -19,9 +19,14 @@ export interface PlanCatalogItem {
 
 // "custom" is deliberately excluded — it's quote-only with no fixed price,
 // so it isn't something a plain "set this plan" override can express.
+//
+// [2026-09-07 correction] Basic changed from a ₱1,500 one-time build + a
+// separate ₱750/year domain-renewal line to a single ₱1,500/year plan
+// that already includes (basic-domain) renewal — see clienthub's
+// functions/_lib/pricing.ts for the full note.
 export const PLAN_CATALOG: PlanCatalogItem[] = [
   { id: "starter", name: "Starter Plan", billing: "one_time", chargeNowPhp: 299 },
-  { id: "basic", name: "Basic Plan", billing: "one_time", chargeNowPhp: 1500, renewalPhp: 750 },
+  { id: "basic", name: "Basic Plan", billing: "annual", chargeNowPhp: 1500, renewalPhp: 1500 },
   { id: "essential", name: "Essential Plan", billing: "annual", chargeNowPhp: 5700, renewalPhp: 4200 },
   { id: "business", name: "Business Plan", billing: "annual", chargeNowPhp: 11500, renewalPhp: 10000 },
 ];

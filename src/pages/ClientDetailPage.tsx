@@ -19,13 +19,22 @@ import {
 } from "../lib/api";
 import { STAGE_LABELS, NEXT_FORWARD_STAGE, ALL_STAGES } from "../lib/stageLabels";
 
+// Defensive display-time fix, matching clienthub's own src/lib/url.ts: a
+// URL stored without a scheme (e.g. "imago.altasme.com", entered before
+// the save-time normalization below existed) would otherwise render as a
+// RELATIVE link, resolving against the current page instead of opening
+// the actual site.
+function ensureAbsoluteUrl(url: string): string {
+  return /^https?:\/\//i.test(url) ? url : `https://${url}`;
+}
+
 // Mirrors functions/_lib/pricing.ts's PLAN_CATALOG ids/names for the
 // override dropdown — display-only here, the actual pricing math (amount,
 // renewal date) is computed server-side in set-plan.ts, never trusted from
 // the frontend. Keep in sync if the catalog ever changes.
 const PLAN_OPTIONS: Array<{ id: string; name: string }> = [
   { id: "starter", name: "Starter Plan (₱299)" },
-  { id: "basic", name: "Basic Plan (₱1,500)" },
+  { id: "basic", name: "Basic Plan (₱1,500/yr)" },
   { id: "essential", name: "Essential Plan (₱1,500 + ₱4,200/yr)" },
   { id: "business", name: "Business Plan (₱1,500 + ₱10,000/yr)" },
 ];
@@ -139,7 +148,7 @@ export default function ClientDetailPage() {
               <p className="text-lg font-bold text-brand-navy">{STAGE_LABELS[project.stage]}</p>
               {project.website_url && !POST_PRESENTATION_OR_LATER.includes(project.stage) && (
                 <p className="mt-1 text-sm">
-                  <a href={project.website_url} target="_blank" rel="noreferrer" className="text-brand-blue hover:underline">
+                  <a href={ensureAbsoluteUrl(project.website_url)} target="_blank" rel="noreferrer" className="text-brand-blue hover:underline">
                     {project.website_url}
                   </a>
                 </p>
@@ -410,7 +419,7 @@ function WebsiteUrlField({
     <div className="mt-2">
       {value && (
         <p className="mb-1.5 text-sm">
-          <a href={value} target="_blank" rel="noreferrer" className="text-brand-blue hover:underline">
+          <a href={ensureAbsoluteUrl(value)} target="_blank" rel="noreferrer" className="text-brand-blue hover:underline">
             {value}
           </a>
         </p>

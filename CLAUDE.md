@@ -120,3 +120,16 @@ Two staff controls added to `ClientDetailPage.tsx`, both requested as part of cl
 `functions/_lib/pricing.ts` here is a small, plans-only duplicate of clienthub's identically-named file (no add-ons — this app's override control only ever sets a *plan*) — same "reuse the pattern, not the code" convention as every other shared-concept module between these two repos (§0). Ids must match clienthub's catalog exactly.
 
 **How this was tested:** live, end to end, against a local `wrangler pages dev` + local D1 seeded from `clienthub/d1/schema.sql` (gitignored `wrangler.toml`/`.dev.vars`, deleted after the session, never committed) — a staff user, a test client with an active Starter Plan row, then: `set-plan` to Business correctly cancelled the Starter row and inserted an active Business row with the right `amount_php`/`renewal_amount_php`/`next_renewal_date`, and wrote both an `audit_log` row (before/after) and a `client_activity` entry; `website` correctly wrote `projects.website_url`. A Playwright screenshot confirmed `ClientDetailPage.tsx` renders the website link + editable field and the Plan card's current-plan display + override dropdown correctly.
+
+---
+
+## 9. URL normalization + Basic plan pricing correction [2026-09-07]
+
+Two small fixes discovered from real usage, paired with clienthub's CLAUDE.md §14:
+
+- **Website URL scheme normalization.** A URL saved without a scheme (e.g. `imago.altasme.com`) previously rendered as a relative link on clienthub's client-facing pages — it opened `https://account.altasme.com/imago.altasme.com` instead of the real site. `functions/api/app/projects/[id]/website.ts` now prepends `https://` if the input doesn't already start with `http(s)://` before writing `projects.website_url` — this is the canonical fix (the one write path). `ClientDetailPage.tsx`'s own read-only link display (both the pre-post-presentation view and `WebsiteUrlField`'s preview) also normalizes defensively at render time, so a URL already stored without a scheme before this fix displays correctly here too without needing a re-save.
+- **Basic plan pricing corrected** to match clienthub's catalog: `functions/_lib/pricing.ts`'s `PLAN_CATALOG` entry for `basic` changed from `{ billing: "one_time", chargeNowPhp: 1500, renewalPhp: 750 }` to `{ billing: "annual", chargeNowPhp: 1500, renewalPhp: 1500 }` — Basic is now ₱1,500/year (domain renewal for basic domains included), not a ₱1,500 one-time build plus a separate ₱750/year line. `ClientDetailPage.tsx`'s `PLAN_OPTIONS` override-dropdown label updated to match ("Basic Plan (₱1,500/yr)").
+
+No change needed to the plan-override endpoint's own logic for either fix — `set-plan.ts` already reads whatever `findPlan()` returns, so it picked up the corrected Basic numbers automatically once the catalog changed. Staff overrides remain unrestricted by design (admins can freely move a client to any plan, including what would be a "downgrade" for a client acting on their own — clienthub's CLAUDE.md §14 covers the client-side half of that rule).
+
+Verified live: setting a project's website URL to `imago.altasme.com` via `POST /api/app/projects/:id/website` correctly stored `https://imago.altasme.com`.
