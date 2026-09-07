@@ -143,6 +143,7 @@ export interface ClientDetail {
     internal_notes: string | null;
     preferred_times: string | null;
     scheduled_at: string | null;
+    meeting_link: string | null;
     created_at: string;
     updated_at: string;
   } | null;
@@ -152,6 +153,7 @@ export interface ClientDetail {
     internal_notes: string | null;
     preferred_times: string | null;
     scheduled_at: string | null;
+    meeting_link: string | null;
     client_decision: string | null;
     created_at: string;
     updated_at: string;
@@ -273,7 +275,7 @@ export function fetchDiscoverySessions(status?: string): Promise<DiscoveryRow[]>
 
 export function updateDiscoverySession(
   id: string,
-  fields: { externalStatus?: string; internalNotes?: string; scheduledAt?: string | null }
+  fields: { externalStatus?: string; internalNotes?: string; scheduledAt?: string | null; meetingLink?: string | null }
 ): Promise<{ ok: true }> {
   return apiFetch(`/api/app/discovery/${id}`, { method: "PATCH", body: JSON.stringify(fields) });
 }
@@ -287,11 +289,38 @@ export function fetchPresentations(status?: string): Promise<PresentationRow[]> 
   return apiFetch(`/api/app/presentations${qs}`);
 }
 
+export function createPresentation(fields: { projectId: string; scheduledAt: string; meetingLink?: string }): Promise<{ id: string }> {
+  return apiFetch(`/api/app/presentations`, { method: "POST", body: JSON.stringify(fields) });
+}
+
 export function updatePresentation(
   id: string,
-  fields: { externalStatus?: string; internalNotes?: string; scheduledAt?: string | null }
+  fields: { externalStatus?: string; internalNotes?: string; scheduledAt?: string | null; meetingLink?: string | null }
 ): Promise<{ ok: true }> {
   return apiFetch(`/api/app/presentations/${id}`, { method: "PATCH", body: JSON.stringify(fields) });
+}
+
+// ---------------------------------------------------------------------------
+// Availability (booking engine)
+
+export interface AvailabilityRule {
+  id: string;
+  day_of_week: number;
+  start_time: string;
+  end_time: string;
+  created_at: string;
+}
+
+export function fetchAvailabilityRules(): Promise<AvailabilityRule[]> {
+  return apiFetch(`/api/app/availability`);
+}
+
+export function addAvailabilityRule(fields: { dayOfWeek: number; startTime: string; endTime: string }): Promise<{ id: string }> {
+  return apiFetch(`/api/app/availability`, { method: "POST", body: JSON.stringify(fields) });
+}
+
+export function deleteAvailabilityRule(id: string): Promise<{ ok: true }> {
+  return apiFetch(`/api/app/availability/${id}`, { method: "DELETE" });
 }
 
 // ---------------------------------------------------------------------------

@@ -8,6 +8,7 @@ import {
   overrideProject,
   updateDiscoverySession,
   updatePresentation,
+  createPresentation,
   unlockOffer,
   recordOfferDecision,
   ApiError,
@@ -163,30 +164,69 @@ export default function ClientDetailPage() {
 
         <Card title="Discovery">
           {!discovery ? (
-            <p className="text-sm text-ink/40">No discovery session yet.</p>
+            <p className="text-sm text-ink/40">No discovery session yet — the client books this themselves.</p>
           ) : (
-            <NotesBlock
-              statusOptions={["requested", "scheduled", "completed"]}
-              status={discovery.external_status}
-              notes={discovery.internal_notes}
-              busy={busy}
-              onSave={(status, notes) => run(() => updateDiscoverySession(discovery.id, { externalStatus: status, internalNotes: notes }))}
-            />
+            <>
+              {discovery.scheduled_at && (
+                <p className="text-sm font-semibold text-brand-navy">
+                  {new Date(discovery.scheduled_at).toLocaleString("en-US", { timeZone: "Asia/Manila" })}
+                </p>
+              )}
+              <MeetingLinkField
+                value={discovery.meeting_link}
+                busy={busy}
+                onSave={(link) => run(() => updateDiscoverySession(discovery.id, { meetingLink: link }))}
+              />
+              <div className="mt-3">
+                <NotesBlock
+                  statusOptions={["requested", "scheduled", "completed"]}
+                  status={discovery.external_status}
+                  notes={discovery.internal_notes}
+                  busy={busy}
+                  onSave={(status, notes) => run(() => updateDiscoverySession(discovery.id, { externalStatus: status, internalNotes: notes }))}
+                />
+              </div>
+            </>
           )}
         </Card>
 
         <Card title="Presentation">
           {!presentation ? (
-            <p className="text-sm text-ink/40">No presentation on record yet.</p>
+            project ? (
+              <SchedulePresentationForm
+                busy={busy}
+                onSchedule={(scheduledAt, meetingLink) =>
+                  run(() => createPresentation({ projectId: project.id, scheduledAt, meetingLink }))
+                }
+              />
+            ) : (
+              <p className="text-sm text-ink/40">No project on record yet.</p>
+            )
           ) : (
             <>
-              <NotesBlock
-                statusOptions={["requested", "scheduled", "completed"]}
-                status={presentation.external_status}
-                notes={presentation.internal_notes}
+              <p className="text-sm font-semibold text-brand-navy">
+                {presentation.scheduled_at
+                  ? new Date(presentation.scheduled_at).toLocaleString("en-US", { timeZone: "Asia/Manila" })
+                  : "No time set"}
+              </p>
+              <RescheduleField
                 busy={busy}
-                onSave={(status, notes) => run(() => updatePresentation(presentation.id, { externalStatus: status, internalNotes: notes }))}
+                onReschedule={(scheduledAt) => run(() => updatePresentation(presentation.id, { scheduledAt }))}
               />
+              <MeetingLinkField
+                value={presentation.meeting_link}
+                busy={busy}
+                onSave={(link) => run(() => updatePresentation(presentation.id, { meetingLink: link }))}
+              />
+              <div className="mt-3">
+                <NotesBlock
+                  statusOptions={["requested", "scheduled", "completed"]}
+                  status={presentation.external_status}
+                  notes={presentation.internal_notes}
+                  busy={busy}
+                  onSave={(status, notes) => run(() => updatePresentation(presentation.id, { externalStatus: status, internalNotes: notes }))}
+                />
+              </div>
               <p className="mt-2 text-xs text-ink/50">Client decision: {presentation.client_decision || "pending"}</p>
             </>
           )}
@@ -317,6 +357,99 @@ function OverrideControl({ busy, onSubmit }: { busy: boolean; onSubmit: (toStage
           Cancel
         </button>
       </div>
+    </div>
+  );
+}
+
+function MeetingLinkField({
+  value,
+  busy,
+  onSave,
+}: {
+  value: string | null;
+  busy: boolean;
+  onSave: (link: string) => void;
+}) {
+  const [local, setLocal] = useState(value || "");
+
+  return (
+    <div className="mt-2 flex gap-2">
+      <input
+        type="text"
+        placeholder="Meeting link (client-visible)"
+        value={local}
+        onChange={(e) => setLocal(e.target.value)}
+        className="flex-1 rounded border border-ink/15 px-2 py-1.5 text-xs"
+      />
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => onSave(local.trim())}
+        className="rounded-full bg-brand-blue px-3 py-1 text-xs font-semibold text-white hover:bg-[#0b57cc] disabled:opacity-50"
+      >
+        Save Link
+      </button>
+    </div>
+  );
+}
+
+function RescheduleField({ busy, onReschedule }: { busy: boolean; onReschedule: (scheduledAt: string) => void }) {
+  const [value, setValue] = useState("");
+
+  return (
+    <div className="mt-2 flex gap-2">
+      <input
+        type="datetime-local"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        className="flex-1 rounded border border-ink/15 px-2 py-1.5 text-xs"
+      />
+      <button
+        type="button"
+        disabled={busy || !value}
+        onClick={() => onReschedule(new Date(value).toISOString())}
+        className="rounded-full border border-brand-blue px-3 py-1 text-xs font-semibold text-brand-blue hover:bg-brand-blue hover:text-white disabled:opacity-50"
+      >
+        Reschedule
+      </button>
+    </div>
+  );
+}
+
+function SchedulePresentationForm({
+  busy,
+  onSchedule,
+}: {
+  busy: boolean;
+  onSchedule: (scheduledAt: string, meetingLink: string) => void;
+}) {
+  const [value, setValue] = useState("");
+  const [link, setLink] = useState("");
+
+  return (
+    <div className="space-y-2">
+      <p className="text-sm text-ink/60">Set the presentation date and time (Asia/Manila).</p>
+      <input
+        type="datetime-local"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        className="w-full rounded border border-ink/15 px-2 py-1.5 text-xs"
+      />
+      <input
+        type="text"
+        placeholder="Meeting link (optional, client-visible)"
+        value={link}
+        onChange={(e) => setLink(e.target.value)}
+        className="w-full rounded border border-ink/15 px-2 py-1.5 text-xs"
+      />
+      <button
+        type="button"
+        disabled={busy || !value}
+        onClick={() => onSchedule(new Date(value).toISOString(), link.trim())}
+        className="rounded-full bg-brand-blue px-4 py-1.5 text-xs font-semibold text-white hover:bg-[#0b57cc] disabled:opacity-50"
+      >
+        Schedule Presentation
+      </button>
     </div>
   );
 }

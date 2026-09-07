@@ -1,17 +1,23 @@
 // Cloudflare Pages Function: PATCH /api/app/discovery/:id
 //
 // Updates a discovery session's external_status/internal_notes/
-// scheduled_at. external_status is what clienthub's client-facing endpoint
-// echoes back to the client (never internal_notes) — see
-// clienthub/CLAUDE.md §6's "internal data is never returned by a client
-// endpoint" rule, which this endpoint's field set on the write side
-// mirrors: staff can set both, the client only ever sees one of them.
+// scheduled_at/meeting_link. external_status and meeting_link are what
+// clienthub's client-facing endpoint echoes back to the client (never
+// internal_notes) — see clienthub/CLAUDE.md §6's "internal data is never
+// returned by a client endpoint" rule, which this endpoint's field set on
+// the write side mirrors: staff can set all of these, the client only
+// ever sees a subset. meeting_link in particular is the one field staff
+// set here that the client can see but can never write themselves.
 //
 // Creating the initial discovery_sessions row happens on the client side
-// of the system (a project entering the 'discovery' stage is when
-// clienthub's interim call-request flow creates one, per
-// clienthub/CLAUDE.md §1.6) — this endpoint only updates an existing row,
-// it never creates one.
+// of the system (clienthub's real booking engine creates it the moment a
+// client books their first discovery-call slot, CLAUDE.md §10) — this
+// endpoint only updates an existing row, it never creates one. If staff
+// change scheduledAt directly here (overriding the client's own booking),
+// it's re-validated against the same conflict rule the booking engine
+// itself uses, so staff can't accidentally double-book a slot either.
+
+import { slotsConflict } from "../../../_lib/scheduling";
 
 const ALLOWED_STATUSES = ["requested", "scheduled", "completed"] as const;
 
@@ -53,7 +59,25 @@ export const onRequestPatch: PagesFunction<Env, "id"> = async ({ request, env, p
     updates.push("internal_notes = ?");
     values.push(b.internalNotes);
   }
+  if (typeof b.meetingLink === "string" || b.meetingLink === null) {
+    updates.push("meeting_link = ?");
+    values.push(b.meetingLink);
+  }
   if (typeof b.scheduledAt === "string" || b.scheduledAt === null) {
+    if (typeof b.scheduledAt === "string") {
+      const candidateMs = new Date(b.scheduledAt).getTime();
+      if (Number.isNaN(candidateMs)) return jsonResponse(400, { error: "scheduledAt is not a valid date." });
+      const bookedResult = await db
+        .prepare(
+          `SELECT scheduled_at FROM discovery_sessions WHERE external_status = 'scheduled' AND scheduled_at IS NOT NULL AND id != ?
+           UNION ALL
+           SELECT scheduled_at FROM presentations WHERE external_status = 'scheduled' AND scheduled_at IS NOT NULL`
+        )
+        .bind(id)
+        .all<{ scheduled_at: string }>();
+      const conflict = (bookedResult.results ?? []).some((r) => slotsConflict(candidateMs, new Date(r.scheduled_at).getTime()));
+      if (conflict) return jsonResponse(409, { error: "That time conflicts with another scheduled session." });
+    }
     updates.push("scheduled_at = ?");
     values.push(b.scheduledAt);
   }

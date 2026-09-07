@@ -1,10 +1,18 @@
 // Cloudflare Pages Function: PATCH /api/app/presentations/:id
 //
-// Updates a presentation's external_status/internal_notes/scheduled_at.
-// client_decision (accepted/declined) is deliberately NOT writable here —
-// that field reflects what the client themselves chose via clienthub's
-// own endpoint, not something staff should be able to overwrite on their
-// behalf; staff can only see it, same as everything else on this record.
+// Updates a presentation's external_status/internal_notes/scheduled_at/
+// meeting_link. client_decision (accepted/declined) is deliberately NOT
+// writable here — that field reflects what the client themselves chose
+// via clienthub's own endpoint, not something staff should be able to
+// overwrite on their behalf; staff can only see it, same as everything
+// else on this record. meeting_link is staff-set, client-visible.
+//
+// Rescheduling here (changing scheduledAt) is re-validated against the
+// same 45+15min conflict rule the booking engine uses (CLAUDE.md §10),
+// per the operator's explicit requirement that presentation scheduling
+// share the discovery-call grid so the two can never double-book.
+
+import { slotsConflict } from "../../../_lib/scheduling";
 
 const ALLOWED_STATUSES = ["requested", "scheduled", "completed"] as const;
 
@@ -46,7 +54,25 @@ export const onRequestPatch: PagesFunction<Env, "id"> = async ({ request, env, p
     updates.push("internal_notes = ?");
     values.push(b.internalNotes);
   }
+  if (typeof b.meetingLink === "string" || b.meetingLink === null) {
+    updates.push("meeting_link = ?");
+    values.push(b.meetingLink);
+  }
   if (typeof b.scheduledAt === "string" || b.scheduledAt === null) {
+    if (typeof b.scheduledAt === "string") {
+      const candidateMs = new Date(b.scheduledAt).getTime();
+      if (Number.isNaN(candidateMs)) return jsonResponse(400, { error: "scheduledAt is not a valid date." });
+      const bookedResult = await db
+        .prepare(
+          `SELECT scheduled_at FROM discovery_sessions WHERE external_status = 'scheduled' AND scheduled_at IS NOT NULL
+           UNION ALL
+           SELECT scheduled_at FROM presentations WHERE external_status = 'scheduled' AND scheduled_at IS NOT NULL AND id != ?`
+        )
+        .bind(id)
+        .all<{ scheduled_at: string }>();
+      const conflict = (bookedResult.results ?? []).some((r) => slotsConflict(candidateMs, new Date(r.scheduled_at).getTime()));
+      if (conflict) return jsonResponse(409, { error: "That time conflicts with another scheduled session." });
+    }
     updates.push("scheduled_at = ?");
     values.push(b.scheduledAt);
   }

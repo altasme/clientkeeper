@@ -67,7 +67,7 @@ export const onRequestGet: PagesFunction<Env, "id"> = async ({ env, params }) =>
   if (project) {
     discovery = await db
       .prepare(
-        `SELECT id, external_status, internal_notes, preferred_times, scheduled_at, created_at, updated_at
+        `SELECT id, external_status, internal_notes, preferred_times, scheduled_at, meeting_link, created_at, updated_at
          FROM discovery_sessions WHERE project_id = ? ORDER BY created_at DESC LIMIT 1`
       )
       .bind(project.id)
@@ -75,7 +75,7 @@ export const onRequestGet: PagesFunction<Env, "id"> = async ({ env, params }) =>
 
     presentation = await db
       .prepare(
-        `SELECT id, external_status, internal_notes, preferred_times, scheduled_at, client_decision, created_at, updated_at
+        `SELECT id, external_status, internal_notes, preferred_times, scheduled_at, meeting_link, client_decision, created_at, updated_at
          FROM presentations WHERE project_id = ? ORDER BY created_at DESC LIMIT 1`
       )
       .bind(project.id)
