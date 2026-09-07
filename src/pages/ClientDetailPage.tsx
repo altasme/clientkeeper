@@ -106,7 +106,7 @@ export default function ClientDetailPage() {
               onClick={() => run(() => resendInvite(client.id))}
               className="mt-3 rounded-full border border-brand-blue px-4 py-1.5 text-xs font-semibold text-brand-blue hover:bg-brand-blue hover:text-white disabled:opacity-50"
             >
-              Resend Account Invitation
+              Resend Account Setup Email
             </button>
           )}
         </Card>
