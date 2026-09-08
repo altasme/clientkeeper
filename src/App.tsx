@@ -9,6 +9,9 @@ import ProjectsPage from "./pages/ProjectsPage";
 import DiscoveryPage from "./pages/DiscoveryPage";
 import PresentationsPage from "./pages/PresentationsPage";
 import OffersPage from "./pages/OffersPage";
+import BillingPage from "./pages/BillingPage";
+import NewBillPage from "./pages/NewBillPage";
+import BillDetailPage from "./pages/BillDetailPage";
 import PaymentsPage from "./pages/PaymentsPage";
 import SettingsPage from "./pages/SettingsPage";
 
@@ -25,6 +28,9 @@ function App() {
           <Route path="/discovery" element={<DiscoveryPage />} />
           <Route path="/presentations" element={<PresentationsPage />} />
           <Route path="/offers" element={<OffersPage />} />
+          <Route path="/billing" element={<BillingPage />} />
+          <Route path="/billing/new" element={<NewBillPage />} />
+          <Route path="/billing/:id" element={<BillDetailPage />} />
           <Route path="/payments" element={<PaymentsPage />} />
           <Route path="/settings" element={<SettingsPage />} />
         </Route>

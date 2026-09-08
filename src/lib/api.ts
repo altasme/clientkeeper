@@ -407,3 +407,84 @@ export interface PaymentRow {
 export function fetchPayments(): Promise<PaymentRow[]> {
   return apiFetch(`/api/app/payments`);
 }
+
+// ---------------------------------------------------------------------------
+// Bills (Bill of Service)
+
+export type BillStatus = "pending" | "paid" | "expired" | "cancelled";
+export type ClientType = "individual" | "corporate";
+
+export interface BillListRow {
+  id: string;
+  billNumber: string;
+  token: string;
+  clientType: ClientType;
+  recipientName: string;
+  currency: string;
+  totalAmount: number;
+  status: BillStatus;
+  issueDate: string;
+  expiresAt: string;
+  createdAt: string;
+  clientId: string | null;
+  clientFullName: string | null;
+  clientBusinessName: string | null;
+}
+
+export function fetchBills(): Promise<BillListRow[]> {
+  return apiFetch(`/api/app/bills`);
+}
+
+export interface BillLineItem {
+  description: string;
+  amount: number;
+}
+
+export interface BillDetail {
+  id: string;
+  billNumber: string;
+  token: string;
+  publicUrl: string;
+  clientId: string | null;
+  clientFullName: string | null;
+  clientBusinessName: string | null;
+  clientType: ClientType;
+  recipientName: string;
+  recipientContactPerson: string | null;
+  recipientTin: string | null;
+  recipientEmail: string | null;
+  scopeDescription: string | null;
+  currency: string;
+  totalAmount: number;
+  validityDays: number;
+  issueDate: string;
+  expiresAt: string;
+  status: BillStatus;
+  notes: string | null;
+  paidAt: string | null;
+  createdAt: string;
+  lineItems: BillLineItem[];
+}
+
+export function fetchBillDetail(id: string): Promise<BillDetail> {
+  return apiFetch(`/api/app/bills/${id}`);
+}
+
+export function createBill(fields: {
+  clientId?: string;
+  clientType: ClientType;
+  recipientName: string;
+  recipientContactPerson?: string;
+  recipientTin?: string;
+  recipientEmail?: string;
+  scopeDescription?: string;
+  lineItems: BillLineItem[];
+  validityDays?: number;
+  notes?: string;
+}): Promise<{ id: string; billNumber: string; token: string; publicUrl: string; createdAt: string }> {
+  return apiFetch(`/api/app/bills`, { method: "POST", body: JSON.stringify(fields) });
+}
+
+export function cancelBill(id: string): Promise<{ ok: true }> {
+  return apiFetch(`/api/app/bills/${id}/cancel`, { method: "POST" });
+}
