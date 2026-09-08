@@ -40,7 +40,7 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
   });
   if (!res.ok) {
     const body = await res.json().catch(() => null);
-    throw new ApiError(res.status, (body as { error?: string } | null)?.error || `Request failed: ${res.status}`);
+    throw new ApiError(res.status, (body as { error?: string } | null)?.error || `Request failed: ${res.status}`, body as Record<string, unknown> | null);
   }
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
@@ -48,9 +48,14 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
 
 export class ApiError extends Error {
   status: number;
-  constructor(status: number, message: string) {
+  // The full error response body, when the endpoint sent one beyond just
+  // `error` (e.g. createClient's 409 duplicate-email response also
+  // carries a `clientId` so the caller can link to the existing record).
+  body: Record<string, unknown> | null;
+  constructor(status: number, message: string, body: Record<string, unknown> | null = null) {
     super(message);
     this.status = status;
+    this.body = body;
   }
 }
 
@@ -113,6 +118,18 @@ export function fetchClients(query: { q?: string; stage?: string; paidNoAccount?
   if (query.paidNoAccount) params.set("paidNoAccount", "1");
   const qs = params.toString();
   return apiFetch(`/api/app/clients${qs ? `?${qs}` : ""}`);
+}
+
+export function createClient(fields: {
+  fullName: string;
+  businessName: string;
+  email: string;
+  mobile?: string;
+  facebook?: string;
+  currentWebsite?: string;
+  initialStage?: Stage;
+}): Promise<{ id: string; projectId: string; createdAt: string }> {
+  return apiFetch(`/api/app/clients`, { method: "POST", body: JSON.stringify(fields) });
 }
 
 export interface ClientDetail {

@@ -1,15 +1,18 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { fetchClients, type ClientListRow } from "../lib/api";
 import { STAGE_LABELS, ALL_STAGES } from "../lib/stageLabels";
+import AddClientModal from "../components/AddClientModal";
 
 export default function ClientsPage() {
+  const navigate = useNavigate();
   const [clients, setClients] = useState<ClientListRow[]>([]);
   const [q, setQ] = useState("");
   const [stage, setStage] = useState("");
   const [paidNoAccount, setPaidNoAccount] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [addOpen, setAddOpen] = useState(false);
 
   useEffect(() => {
     setLoading(true);
@@ -24,7 +27,16 @@ export default function ClientsPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-brand-navy">Clients</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-brand-navy">Clients</h1>
+        <button
+          type="button"
+          onClick={() => setAddOpen(true)}
+          className="rounded-full bg-brand-blue px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#0b57cc]"
+        >
+          + Add Client
+        </button>
+      </div>
 
       <div className="mt-4 flex flex-wrap items-center gap-3">
         <input
@@ -97,6 +109,8 @@ export default function ClientsPage() {
           </tbody>
         </table>
       </div>
+
+      <AddClientModal open={addOpen} onClose={() => setAddOpen(false)} onCreated={(clientId) => navigate(`/clients/${clientId}`)} />
     </div>
   );
 }
