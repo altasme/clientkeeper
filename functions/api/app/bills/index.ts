@@ -29,6 +29,38 @@ async function generateBillNumber(db: D1Database): Promise<string> {
   return `${prefix}${String(seq).padStart(3, "0")}`;
 }
 
+// Short public-link token, replacing a bare crypto.randomUUID() (36
+// characters — the operator's own complaint: too long to comfortably
+// share in chat). 8 characters from a 32-symbol alphabet (32^8 ≈ 1.1
+// trillion combinations) is short enough to read out loud but still far
+// too large to guess or brute-force, matching the original "unique link
+// so it doesn't look scammy" requirement this feature was built around —
+// literally "the last 4 digits" (10,000 possibilities) would make other
+// clients' bills practically guessable. Alphabet excludes 0/1/l/o/i to
+// avoid visual confusion if anyone ever has to read or retype it, and is
+// lowercase-only so copy/paste through a chat app can't be mangled by
+// autocapitalization. 256 % 32 === 0, so mapping a random byte via modulo
+// introduces no bias. Existing bills keep their long (UUID) tokens
+// unchanged — token is just an opaque TEXT column, no format constraint.
+const TOKEN_ALPHABET = "23456789abcdefghjkmnpqrstuvwxyz";
+const TOKEN_LENGTH = 8;
+
+function generateShortToken(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(TOKEN_LENGTH));
+  return Array.from(bytes, (b) => TOKEN_ALPHABET[b % TOKEN_ALPHABET.length]).join("");
+}
+
+async function generateUniqueToken(db: D1Database): Promise<string> {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const token = generateShortToken();
+    const existing = await db.prepare(`SELECT id FROM bills WHERE token = ?`).bind(token).first<{ id: string }>();
+    if (!existing) return token;
+  }
+  // Astronomically unlikely at 32^8 combinations — if every retry somehow
+  // collided, fall back to a full UUID rather than looping forever.
+  return crypto.randomUUID();
+}
+
 export const onRequestGet: PagesFunction<Env> = async ({ env }) => {
   if (!env.DB) return jsonResponse(500, { error: "Not configured" });
   const db = env.DB;
@@ -146,7 +178,7 @@ export const onRequestPost: PagesFunction<Env, string, { staffUser: StaffUser }>
 
   const billNumber = await generateBillNumber(db);
   const billId = crypto.randomUUID();
-  const token = crypto.randomUUID();
+  const token = await generateUniqueToken(db);
 
   await db
     .prepare(
