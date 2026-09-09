@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { fetchBillDetail, cancelBill, type BillDetail, type BillStatus } from "../lib/api";
+import { fetchBillDetail, cancelBill, reconcileBillPayment, type BillDetail, type BillStatus } from "../lib/api";
 
 const STATUS_STYLES: Record<BillStatus, string> = {
   pending: "bg-amber-100 text-amber-700",
@@ -30,6 +30,8 @@ export default function BillDetailPage() {
   const [copied, setCopied] = useState(false);
   const [confirmingCancel, setConfirmingCancel] = useState(false);
   const [cancelling, setCancelling] = useState(false);
+  const [checkingStatus, setCheckingStatus] = useState(false);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
   const load = () => {
     if (!id) return;
@@ -46,6 +48,22 @@ export default function BillDetailPage() {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     });
+  };
+
+  const handleCheckStatus = async () => {
+    if (!bill) return;
+    setCheckingStatus(true);
+    setStatusMessage(null);
+    setError(null);
+    try {
+      const result = await reconcileBillPayment(bill.token);
+      setStatusMessage(result.message || (result.reconciled ? "Bill marked paid." : "No change."));
+      if (result.reconciled) load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't check payment status.");
+    } finally {
+      setCheckingStatus(false);
+    }
   };
 
   const handleCancel = async () => {
@@ -101,7 +119,18 @@ export default function BillDetailPage() {
             >
               View as Client
             </a>
+            {bill.status === "pending" && (
+              <button
+                type="button"
+                disabled={checkingStatus}
+                onClick={handleCheckStatus}
+                className="rounded-full border border-ink/15 px-4 py-1.5 text-xs font-semibold text-brand-navy transition hover:border-brand-blue hover:text-brand-blue disabled:opacity-50"
+              >
+                {checkingStatus ? "Checking…" : "Check Payment Status"}
+              </button>
+            )}
           </div>
+          {statusMessage && <p className="mt-2 text-xs text-ink/60">{statusMessage}</p>}
         </Card>
 
         <Card title="Recipient">

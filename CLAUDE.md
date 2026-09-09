@@ -201,3 +201,15 @@ Two parts of the literal suggestion didn't survive as asked:
 **No changes needed in `clienthub`** — its `GET /api/public/bill/[token]` and `POST /api/public/bill/[token]/checkout` both just match `token` as an opaque string, regardless of length or format.
 
 **How this was tested:** `npm run build`, `npm run lint`, and `npx tsc -p functions/tsconfig.json --noEmit` all passed clean. Then the same cross-repo local setup as §12/§13 (clienthub on :8788, clientkeeper on :8789, one shared `--persist-to` D1 directory, an HMAC-signed staff session cookie built by hand to skip a live WorkOS call) — created three bills via `POST /api/app/bills` and got three distinct 8-character tokens (`5uny4tu3`, `78948azy`, `9funtwum`); confirmed `GET /api/public/bill/5uny4tu3` on clienthub's dev server resolved the correct bill (200) and that a bogus-looking token (`zzzzzzzz`) correctly 404'd; took a Playwright screenshot of the ClientKeeper detail page showing the new link rendering cleanly on one line (`https://account.altasme.com/bill/5uny4tu3`). All test scaffolding (both `wrangler.toml`s, `.dev.vars`, `.wrangler/`, the shared persist directory, scratch scripts/screenshots) deleted afterward, nothing committed.
+
+---
+
+## 15. "Check Payment Status" — manual reconciliation for a stuck bill [2026-09-09]
+
+Companion to clienthub's CLAUDE.md §18: once the live ganap.net project's Status & Retry API became available, `BillDetailPage.tsx` gained a "Check Payment Status" button (next to "Copy Link"/"View as Client", shown only while `status === "pending"`) so staff aren't stuck waiting on a webhook that might never arrive for a bill someone insists they already paid.
+
+`src/lib/api.ts`'s `reconcileBillPayment(token)` deliberately does **not** go through this file's `apiFetch()` helper — it calls `https://account.altasme.com/api/public/bill/:token/reconcile` directly, cross-origin, with no cookies. That's a direct consequence of this app's own isolation design (§0): ClientKeeper holds no ganap.net credentials at all, so the actual status-check network call can only happen on clienthub's side, where those credentials live. The bill's own token is what gates the endpoint — same posture as the public bill page and its checkout endpoint, not a new auth mechanism.
+
+On click: shows "Checking…", then either a plain status message (ganap says still pending/failed/expired, with clienthub surfacing its own webhook-delivery diagnostics under the hood) or, if ganap confirms paid, clienthub settles the bill server-side and this page reloads the bill detail to show the new `paid` state.
+
+**How this was tested:** `npm run build`/`lint`/`tsc --noEmit` clean. See clienthub's CLAUDE.md §18 for the reconcile endpoint's own test coverage (the DB-side branches — no-reference, already-paid, unknown token — were exercised directly against a local `wrangler pages dev`; the actual outbound call to ganap.net can't be reached from this sandbox, same limitation as every other real ganap integration in this project, and correctly surfaces as a graceful error here rather than a broken button).

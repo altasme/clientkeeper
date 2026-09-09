@@ -488,3 +488,28 @@ export function createBill(fields: {
 export function cancelBill(id: string): Promise<{ ok: true }> {
   return apiFetch(`/api/app/bills/${id}/cancel`, { method: "POST" });
 }
+
+export interface ReconcileBillResult {
+  reconciled: boolean;
+  billStatus: string;
+  ganapStatus?: string;
+  webhookDelivered?: boolean | null;
+  webhookLastResponse?: string | null;
+  message?: string;
+  error?: string;
+}
+
+// Deliberately NOT apiFetch() — this hits clienthub's domain directly,
+// cross-origin, since ClientKeeper holds no ganap.net credentials of its
+// own (this app's isolation-by-design, see CLAUDE.md §0) and the actual
+// status-check call can only happen where those credentials live. No
+// cookies needed: the bill's own token is the endpoint's only gate, same
+// as the public bill page itself.
+export async function reconcileBillPayment(token: string): Promise<ReconcileBillResult> {
+  const res = await fetch(`https://account.altasme.com/api/public/bill/${token}/reconcile`, {
+    method: "POST",
+  });
+  const data = (await res.json().catch(() => ({}))) as ReconcileBillResult;
+  if (!res.ok) throw new Error(data.error || "Couldn't check payment status.");
+  return data;
+}
