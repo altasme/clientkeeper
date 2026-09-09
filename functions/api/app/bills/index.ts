@@ -128,12 +128,14 @@ export const onRequestPost: PagesFunction<Env, string, { staffUser: StaffUser }>
     if (!client) return jsonResponse(404, { error: "Client not found." });
   }
 
-  // A bill needs some way to actually reach ganap.net's customerEmail
-  // field at checkout time (Client Hub's functions/api/public/bill/
-  // [token]/checkout.ts) — either the linked client's own email, or an
-  // explicit recipientEmail for a standalone (not-yet-a-client) bill.
-  if (!client && (!recipientEmail || !EMAIL_RE.test(recipientEmail))) {
-    return jsonResponse(400, { error: "A valid recipient email is required when this bill isn't linked to an existing client." });
+  // Not required (operator decision, 2026-09-09): a bill can be created
+  // with no email at all — staff share the link manually via chat, and
+  // Client Hub's checkout falls back to a generic address if neither the
+  // linked client nor this field has one (functions/api/public/bill/
+  // [token]/checkout.ts there). Still validated for shape if one IS given,
+  // since a malformed email is worse than none.
+  if (recipientEmail && !EMAIL_RE.test(recipientEmail)) {
+    return jsonResponse(400, { error: "That doesn't look like a valid email address." });
   }
 
   const totalAmount = lineItems.reduce((sum, item) => sum + item.amount, 0);
