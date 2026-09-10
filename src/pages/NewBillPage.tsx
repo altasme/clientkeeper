@@ -62,6 +62,9 @@ function BillPreview({
 
   return (
     <div className="rounded-2xl border border-ink/10 bg-white p-6 shadow-sm">
+      <div className="mb-4 flex justify-center">
+        <img src="/images/brand/altaventures-logo.png" alt="Altaventures" width={838} height={105} className="h-5 w-auto" />
+      </div>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="text-xl font-extrabold text-brand-navy">Bill of Service</h2>
@@ -186,7 +189,9 @@ export default function NewBillPage() {
 
   const total = validLineItems.reduce((sum, item) => sum + item.amount, 0);
 
-  const canSubmit = recipientName.trim() && validLineItems.length > 0;
+  const GANAP_MINIMUM_AMOUNT_PHP = 200;
+  const belowMinimum = validLineItems.length > 0 && total < GANAP_MINIMUM_AMOUNT_PHP;
+  const canSubmit = recipientName.trim() && validLineItems.length > 0 && !belowMinimum;
 
   const handleSubmit = async () => {
     setError(null);
@@ -355,6 +360,9 @@ export default function NewBillPage() {
             <p className="text-sm font-bold text-brand-navy">Total Amount Payable</p>
             <p className="text-lg font-extrabold text-brand-navy">{formatMoney(total)}</p>
           </div>
+          {belowMinimum && (
+            <p className="text-xs text-red-600">The total must be at least ₱{GANAP_MINIMUM_AMOUNT_PHP} (ganap.net's payment minimum).</p>
+          )}
 
           <div>
             <label className={labelClass}>Expires After (days)</label>

@@ -213,3 +213,18 @@ Companion to clienthub's CLAUDE.md §18: once the live ganap.net project's Statu
 On click: shows "Checking…", then either a plain status message (ganap says still pending/failed/expired, with clienthub surfacing its own webhook-delivery diagnostics under the hood) or, if ganap confirms paid, clienthub settles the bill server-side and this page reloads the bill detail to show the new `paid` state.
 
 **How this was tested:** `npm run build`/`lint`/`tsc --noEmit` clean. See clienthub's CLAUDE.md §18 for the reconcile endpoint's own test coverage (the DB-side branches — no-reference, already-paid, unknown token — were exercised directly against a local `wrangler pages dev`; the actual outbound call to ganap.net can't be reached from this sandbox, same limitation as every other real ganap integration in this project, and correctly surfaces as a graceful error here rather than a broken button).
+
+---
+
+## 16. Payment flow audit, ganap minimum amount, and branding [2026-09-10]
+
+Audited the full payment flow at the operator's request, to prepare it for commercial production use. Full writeup is in the marketing site's CLAUDE.md section 20; this section covers what changed in this app specifically.
+
+**Added a ganap.net minimum transaction amount check.** The operator's own live 1 peso test on the marketing site surfaced a real gap: ganap.net enforces a 200 peso minimum, and nothing anywhere checked for it. `functions/api/app/bills/index.ts` now rejects a bill whose total is under 200 pesos at creation time, with a clear error, so staff learn about the floor immediately instead of a client hitting a mystery payment failure days later. `NewBillPage.tsx` mirrors the same check client side (disables the submit button, shows the same message under the live total) so staff see the problem before ever hitting submit. A matching safety net was added on clienthub's side too (see its CLAUDE.md section 19), for any bill created before this check existed.
+
+**Branding: this app had none until now.** No logo, no favicon, anywhere. Added `public/images/brand/altaventures-logo.png` (copied from the marketing site's own asset) and `public/favicon.png`, wired into:
+- `index.html`'s `<link rel="icon">`.
+- `Layout.tsx`'s sidebar header, replacing the old plain text "Altaventures" eyebrow above the "ClientKeeper" label.
+- `NewBillPage.tsx`'s `BillPreview` component, which mirrors the public bill page's layout for staff to check before saving. Added the same logo eyebrow there for one to one fidelity with what a client actually sees.
+
+**How this was tested:** `npm run build`, `npx tsc -p functions/tsconfig.json --noEmit`, and `npm run lint` all passed clean. The logo rendering was checked visually via a standalone screenshot at the exact heights used, since most of this app sits behind staff login this sandbox cannot complete.

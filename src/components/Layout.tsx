@@ -27,8 +27,8 @@ export default function Layout() {
     <div className="flex min-h-screen bg-paper-alt">
       <aside className="flex w-60 shrink-0 flex-col border-r border-ink/10 bg-white">
         <div className="border-b border-ink/10 px-5 py-5">
-          <p className="text-xs font-semibold uppercase tracking-wide text-brand-blue">Altaventures</p>
-          <h1 className="mt-0.5 text-lg font-bold text-brand-navy">ClientKeeper</h1>
+          <img src="/images/brand/altaventures-logo.png" alt="Altaventures" width={838} height={105} className="h-6 w-auto" />
+          <h1 className="mt-2 text-lg font-bold text-brand-navy">ClientKeeper</h1>
         </div>
         <nav className="flex-1 space-y-1 px-3 py-4">
           {NAV_ITEMS.map((item) => (

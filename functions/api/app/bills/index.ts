@@ -171,6 +171,18 @@ export const onRequestPost: PagesFunction<Env, string, { staffUser: StaffUser }>
   }
 
   const totalAmount = lineItems.reduce((sum, item) => sum + item.amount, 0);
+
+  // ganap.net enforces a real minimum transaction amount, discovered
+  // 2026-09-10 during a live ₱1 test on the /foryourbusiness offer
+  // (checkout returned a generic 502, no clear reason given). Checked
+  // here at creation time so staff learn about the floor immediately,
+  // instead of the client hitting a mystery payment failure days later
+  // when they try to pay a bill under that amount.
+  const GANAP_MINIMUM_AMOUNT_PHP = 200;
+  if (totalAmount < GANAP_MINIMUM_AMOUNT_PHP) {
+    return jsonResponse(400, { error: `The total must be at least ₱${GANAP_MINIMUM_AMOUNT_PHP} (ganap.net's payment minimum).` });
+  }
+
   const now = new Date();
   const nowIso = now.toISOString();
   const issueDate = MANILA_DATE_FORMATTER.format(now);
