@@ -33,7 +33,7 @@ function ensureAbsoluteUrl(url: string): string {
 // renewal date) is computed server-side in set-plan.ts, never trusted from
 // the frontend. Keep in sync if the catalog ever changes.
 const PLAN_OPTIONS: Array<{ id: string; name: string }> = [
-  { id: "starter", name: "Starter Plan (₱299)" },
+  { id: "starter", name: "Starter Plan (₱499)" },
   { id: "basic", name: "Basic Plan (₱1,500/yr)" },
   { id: "essential", name: "Essential Plan (₱1,500 + ₱4,200/yr)" },
   { id: "business", name: "Business Plan (₱1,500 + ₱10,000/yr)" },

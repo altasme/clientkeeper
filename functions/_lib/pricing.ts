@@ -25,7 +25,7 @@ export interface PlanCatalogItem {
 // that already includes (basic-domain) renewal — see clienthub's
 // functions/_lib/pricing.ts for the full note.
 export const PLAN_CATALOG: PlanCatalogItem[] = [
-  { id: "starter", name: "Starter Plan", billing: "one_time", chargeNowPhp: 299 },
+  { id: "starter", name: "Starter Plan", billing: "one_time", chargeNowPhp: 499 },
   { id: "basic", name: "Basic Plan", billing: "annual", chargeNowPhp: 1500, renewalPhp: 1500 },
   { id: "essential", name: "Essential Plan", billing: "annual", chargeNowPhp: 5700, renewalPhp: 4200 },
   { id: "business", name: "Business Plan", billing: "annual", chargeNowPhp: 11500, renewalPhp: 10000 },

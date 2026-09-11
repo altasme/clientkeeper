@@ -228,3 +228,17 @@ Audited the full payment flow at the operator's request, to prepare it for comme
 - `NewBillPage.tsx`'s `BillPreview` component, which mirrors the public bill page's layout for staff to check before saving. Added the same logo eyebrow there for one to one fidelity with what a client actually sees.
 
 **How this was tested:** `npm run build`, `npx tsc -p functions/tsconfig.json --noEmit`, and `npm run lint` all passed clean. The logo rendering was checked visually via a standalone screenshot at the exact heights used, since most of this app sits behind staff login this sandbox cannot complete.
+
+---
+
+## 17. Starter Plan price raised from ₱299 to ₱499 [2026-09-11]
+
+Companion to clienthub's CLAUDE.md §20 and the marketing site's CLAUDE.md §21: the operator raised the /foryourbusiness offer's price from ₱299 to ₱499.
+
+**Changed:**
+- `functions/_lib/pricing.ts`: this app's own copy of the `starter` catalog entry's `chargeNowPhp` is now 499.
+- `src/pages/ClientDetailPage.tsx`: the staff-facing "Set Plan" override dropdown's Starter label changed from "Starter Plan (₱299)" to "Starter Plan (₱499)".
+
+**Left unchanged, deliberately:** `functions/api/app/clients/[id]/set-plan.ts`'s header comment quotes the operator's own original instruction verbatim ("All clients start at starter plan 299, but we have to be able to override it"). That is a direct quote of something the operator actually said, not a live price statement, so it stays as originally written rather than being edited to match the new number.
+
+**How this was tested:** `npm run build`, `npx tsc -p functions/tsconfig.json --noEmit`, and `npm run lint` all passed clean. Grepped the whole repo for "299" before and after to confirm only the deliberately-kept quote remains.
