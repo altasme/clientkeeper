@@ -13,15 +13,29 @@ export default function Modal({
 }) {
   const closeButtonRef = useRef<HTMLButtonElement>(null);
 
+  // onClose is read through a ref, not put in the effect's dependency
+  // array, on purpose. AddClientModal (the one caller today) passes an
+  // inline onClose, and its own state changes on every keystroke while
+  // typing into any field, so a new onClose reference gets created on
+  // every render. If the effect depended on [open, onClose], it would
+  // re-run on every keystroke too and re-focus the close button each
+  // time, yanking focus out of whatever field the user just typed into
+  // (this is exactly what "click a field, then it glitches" looks like).
+  // Keying the effect on [open] alone means it only runs once when the
+  // dialog actually opens or closes, while the ref keeps the Escape
+  // handler calling whatever onClose is current.
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
   useEffect(() => {
     if (!open) return;
     closeButtonRef.current?.focus();
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") onCloseRef.current();
     };
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
 
