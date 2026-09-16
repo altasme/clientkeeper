@@ -87,3 +87,36 @@ export function wsaAgreementEmail(params: { clientName: string; businessName: st
 
   return { subject: `Your Website Service Agreement: ${businessName || "Altaventures"}`, html };
 }
+
+// A domain's expiration is never stored — only its registration date is
+// (`clients.domain_registered_at`, d1/schema.sql). Expiration is always
+// registration + 1 year, computed here and nowhere else, so ClientKeeper's
+// UI and this reminder email can never show two different expiration
+// dates for the same client. Same setUTCFullYear() approach as set-plan.ts's
+// addInterval(), operating on a plain "YYYY-MM-DD" string.
+export function computeDomainExpiration(domainRegisteredAt: string): string {
+  const d = new Date(`${domainRegisteredAt}T00:00:00Z`);
+  d.setUTCFullYear(d.getUTCFullYear() + 1);
+  return d.toISOString().slice(0, 10);
+}
+
+function formatDateForEmail(isoDate: string): string {
+  return new Date(`${isoDate}T00:00:00Z`).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric", timeZone: "UTC" });
+}
+
+export function domainRenewalReminderEmail(params: { clientName: string; businessName: string; domainRegisteredAt: string }): {
+  subject: string;
+  html: string;
+} {
+  const { clientName, businessName, domainRegisteredAt } = params;
+  const greetingName = clientName || businessName || "there";
+  const expiresAt = computeDomainExpiration(domainRegisteredAt);
+
+  const html = `
+    <p>Hi ${escapeHtml(greetingName)},</p>
+    <p>This is a reminder that the domain for <strong>${escapeHtml(businessName)}</strong> is due to expire on <strong>${escapeHtml(formatDateForEmail(expiresAt))}</strong>.</p>
+    <p>Reply to this email or message us if you'd like help renewing it before then.</p>
+  `;
+
+  return { subject: `Domain Renewal Reminder: ${businessName || "Altaventures"}`, html };
+}

@@ -15,6 +15,7 @@ import {
   setProjectWebsite,
   setClientDates,
   sendWsaLink,
+  sendDomainReminder,
   deleteClient,
   ApiError,
   type ClientDetail,
@@ -29,6 +30,17 @@ import { STAGE_LABELS, NEXT_FORWARD_STAGE, ALL_STAGES } from "../lib/stageLabels
 // the actual site.
 function ensureAbsoluteUrl(url: string): string {
   return /^https?:\/\//i.test(url) ? url : `https://${url}`;
+}
+
+// Mirrors functions/_lib/email.ts's computeDomainExpiration() exactly —
+// domain expiration is never stored, only the registration date is, so
+// this is the one place (alongside that server-side copy) that computes
+// it for display. Kept in sync deliberately rather than fetched from the
+// server, since it's a pure function of a value already in hand.
+function computeDomainExpiration(domainRegisteredAt: string): string {
+  const d = new Date(`${domainRegisteredAt}T00:00:00Z`);
+  d.setUTCFullYear(d.getUTCFullYear() + 1);
+  return d.toISOString().slice(0, 10);
 }
 
 // Mirrors functions/_lib/pricing.ts's PLAN_CATALOG ids/names for the
@@ -179,10 +191,11 @@ export default function ClientDetailPage() {
 
         <Card title="Dates">
           <DatesBlock
-            domainExpiresAt={client.domain_expires_at}
+            domainRegisteredAt={client.domain_registered_at}
             planRenewalDate={client.plan_renewal_date}
             busy={busy}
             onSave={(fields) => run(() => setClientDates(client.id, fields))}
+            onSendReminder={() => run(() => sendDomainReminder(client.id))}
           />
         </Card>
 
@@ -559,33 +572,36 @@ function PlanBlock({
 }
 
 function DatesBlock({
-  domainExpiresAt,
+  domainRegisteredAt,
   planRenewalDate,
   busy,
   onSave,
+  onSendReminder,
 }: {
-  domainExpiresAt: string | null;
+  domainRegisteredAt: string | null;
   planRenewalDate: string | null;
   busy: boolean;
-  onSave: (fields: { domainExpiresAt: string | null; planRenewalDate: string | null }) => void;
+  onSave: (fields: { domainRegisteredAt: string | null; planRenewalDate: string | null }) => void;
+  onSendReminder: () => void;
 }) {
   // Dates are stored as whatever staff typed (ISO-ish strings from a
   // datetime, or an "YYYY-MM-DD" from this <input type="date">) — slice to
   // the first 10 chars so a full ISO timestamp still populates the date
   // input correctly instead of failing to parse.
-  const [domain, setDomain] = useState(domainExpiresAt ? domainExpiresAt.slice(0, 10) : "");
+  const [domain, setDomain] = useState(domainRegisteredAt ? domainRegisteredAt.slice(0, 10) : "");
   const [renewal, setRenewal] = useState(planRenewalDate ? planRenewalDate.slice(0, 10) : "");
 
   return (
     <div className="space-y-3">
       <div>
-        <label className="text-xs font-semibold text-ink/50">Domain expiration date</label>
+        <label className="text-xs font-semibold text-ink/50">Domain registration date</label>
         <input
           type="date"
           value={domain}
           onChange={(e) => setDomain(e.target.value)}
           className="mt-1 w-full rounded border border-ink/15 px-2 py-1.5 text-xs"
         />
+        {domain && <p className="mt-1 text-[11px] text-ink/50">Expires {new Date(`${computeDomainExpiration(domain)}T00:00:00Z`).toLocaleDateString()}</p>}
       </div>
       <div>
         <label className="text-xs font-semibold text-ink/50">Plan renewal date</label>
@@ -596,15 +612,27 @@ function DatesBlock({
           className="mt-1 w-full rounded border border-ink/15 px-2 py-1.5 text-xs"
         />
       </div>
-      <button
-        type="button"
-        disabled={busy}
-        onClick={() => onSave({ domainExpiresAt: domain || null, planRenewalDate: renewal || null })}
-        className="rounded-full bg-brand-blue px-4 py-1.5 text-xs font-semibold text-white hover:bg-[#0b57cc] disabled:opacity-50"
-      >
-        Save Dates
-      </button>
-      <p className="text-[11px] text-ink/40">Staff-entered record-keeping only &mdash; not tied to any plan's auto-computed renewal math.</p>
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => onSave({ domainRegisteredAt: domain || null, planRenewalDate: renewal || null })}
+          className="rounded-full bg-brand-blue px-4 py-1.5 text-xs font-semibold text-white hover:bg-[#0b57cc] disabled:opacity-50"
+        >
+          Save Dates
+        </button>
+        {domainRegisteredAt && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={onSendReminder}
+            className="rounded-full border border-brand-blue px-4 py-1.5 text-xs font-semibold text-brand-blue hover:bg-brand-blue hover:text-white disabled:opacity-50"
+          >
+            Send Domain Renewal Reminder
+          </button>
+        )}
+      </div>
+      <p className="text-[11px] text-ink/40">Staff-entered record-keeping only &mdash; not tied to any plan's auto-computed renewal math. Expiration is always registration date + 1 year.</p>
     </div>
   );
 }

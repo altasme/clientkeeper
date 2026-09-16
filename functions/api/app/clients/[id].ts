@@ -51,7 +51,7 @@ export const onRequestGet: PagesFunction<Env, "id"> = async ({ env, params }) =>
   const client = await db
     .prepare(
       `SELECT id, workos_user_id, email, full_name, business_name, mobile, facebook, current_website,
-              invitation_status, domain_expires_at, plan_renewal_date, created_at, updated_at
+              invitation_status, domain_registered_at, plan_renewal_date, created_at, updated_at
        FROM clients WHERE id = ?`
     )
     .bind(clientId)
@@ -65,7 +65,7 @@ export const onRequestGet: PagesFunction<Env, "id"> = async ({ env, params }) =>
       facebook: string | null;
       current_website: string | null;
       invitation_status: string;
-      domain_expires_at: string | null;
+      domain_registered_at: string | null;
       plan_renewal_date: string | null;
       created_at: string;
       updated_at: string;

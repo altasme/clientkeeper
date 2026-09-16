@@ -1,15 +1,21 @@
 // Cloudflare Pages Function: POST /api/app/clients/:id/set-dates
 //
-// CLAUDE.md §19: lets staff type in a client's domain expiration date and
-// plan renewal date directly. Deliberately separate from `subscriptions.
-// next_renewal_date` (set only as a side effect of set-plan.ts's
-// auto-computed addInterval() math, and only exists at all once a plan
-// subscription row does) — these two fields live on `clients` instead so
-// they can be tracked for any client regardless of subscription state (a
-// comp, a legacy client, one of the new no-op "free"/"299" plans), and so
-// staff can correct them to match the real-world domain
+// CLAUDE.md §19/§20: lets staff type in a client's domain registration
+// date and plan renewal date directly. Deliberately separate from
+// `subscriptions.next_renewal_date` (set only as a side effect of
+// set-plan.ts's auto-computed addInterval() math, and only exists at all
+// once a plan subscription row does) — these two fields live on `clients`
+// instead so they can be tracked for any client regardless of subscription
+// state (a comp, a legacy client, one of the new no-op "free"/"299"
+// plans), and so staff can correct them to match the real-world domain
 // registrar/renewal date without resetting the client's whole plan
 // history through "Set Plan".
+//
+// Domain EXPIRATION is deliberately not a field here at all — it's always
+// registration date + 1 year, computed wherever it's shown (this app's
+// UI, the renewal reminder email in send-domain-reminder.ts), never
+// stored. Storing both would let them drift if a registration date is
+// ever corrected.
 //
 // Both fields are optional independently (either can be sent alone) and
 // nullable (send "" or null to clear one). No format validation beyond
@@ -48,26 +54,26 @@ export const onRequestPost: PagesFunction<Env, "id", { staffUser: StaffUser }> =
   }
   const b = body as Record<string, unknown>;
 
-  const domainExpiresAt = normalizeDate(b.domainExpiresAt);
+  const domainRegisteredAt = normalizeDate(b.domainRegisteredAt);
   const planRenewalDate = normalizeDate(b.planRenewalDate);
 
-  if (domainExpiresAt === undefined && planRenewalDate === undefined) {
+  if (domainRegisteredAt === undefined && planRenewalDate === undefined) {
     return jsonResponse(400, { error: "Nothing to update." });
   }
 
   const client = await db
-    .prepare(`SELECT id, domain_expires_at, plan_renewal_date FROM clients WHERE id = ?`)
+    .prepare(`SELECT id, domain_registered_at, plan_renewal_date FROM clients WHERE id = ?`)
     .bind(clientId)
-    .first<{ id: string; domain_expires_at: string | null; plan_renewal_date: string | null }>();
+    .first<{ id: string; domain_registered_at: string | null; plan_renewal_date: string | null }>();
   if (!client) return jsonResponse(404, { error: "Client not found" });
 
-  const nextDomainExpiresAt = domainExpiresAt === undefined ? client.domain_expires_at : domainExpiresAt;
+  const nextDomainRegisteredAt = domainRegisteredAt === undefined ? client.domain_registered_at : domainRegisteredAt;
   const nextPlanRenewalDate = planRenewalDate === undefined ? client.plan_renewal_date : planRenewalDate;
   const now = new Date().toISOString();
 
   await db
-    .prepare(`UPDATE clients SET domain_expires_at = ?, plan_renewal_date = ?, updated_at = ? WHERE id = ?`)
-    .bind(nextDomainExpiresAt, nextPlanRenewalDate, now, clientId)
+    .prepare(`UPDATE clients SET domain_registered_at = ?, plan_renewal_date = ?, updated_at = ? WHERE id = ?`)
+    .bind(nextDomainRegisteredAt, nextPlanRenewalDate, now, clientId)
     .run();
 
   await db
@@ -79,8 +85,8 @@ export const onRequestPost: PagesFunction<Env, "id", { staffUser: StaffUser }> =
       crypto.randomUUID(),
       data.staffUser.id,
       clientId,
-      JSON.stringify({ domainExpiresAt: client.domain_expires_at, planRenewalDate: client.plan_renewal_date }),
-      JSON.stringify({ domainExpiresAt: nextDomainExpiresAt, planRenewalDate: nextPlanRenewalDate }),
+      JSON.stringify({ domainRegisteredAt: client.domain_registered_at, planRenewalDate: client.plan_renewal_date }),
+      JSON.stringify({ domainRegisteredAt: nextDomainRegisteredAt, planRenewalDate: nextPlanRenewalDate }),
       now
     )
     .run();
@@ -93,5 +99,5 @@ export const onRequestPost: PagesFunction<Env, "id", { staffUser: StaffUser }> =
     .bind(crypto.randomUUID(), clientId, data.staffUser.id, now)
     .run();
 
-  return jsonResponse(200, { ok: true, domainExpiresAt: nextDomainExpiresAt, planRenewalDate: nextPlanRenewalDate });
+  return jsonResponse(200, { ok: true, domainRegisteredAt: nextDomainRegisteredAt, planRenewalDate: nextPlanRenewalDate });
 };
