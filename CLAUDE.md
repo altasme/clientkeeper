@@ -254,3 +254,17 @@ Operator report: "I can't add a client manually. There's an issue," clarified as
 **Fix:** the effect now depends on `[open]` only. `onClose` is read through a ref (`onCloseRef`, updated on every render but not part of the dependency array) so the Escape-key handler always calls the current `onClose` without needing the effect itself to re-run when that reference changes. The initial-focus behavior (moving focus to the close button when the dialog opens) still works exactly the same, it just no longer refires on every keystroke.
 
 **How this was verified, not just reasoned about:** built a throwaway Vite entry point (`scratch-harness.tsx`/`.html`, deleted afterward, never committed) that renders `AddClientModal` inside a parent that re-renders on its own, mirroring `ClientsPage.tsx`'s exact prop-passing shape without needing auth or routing. Used Playwright to click the "Client Name" field and type "Juan": against the original code, `document.activeElement` after typing was the Close button and the field had captured only the first character ("J"); against the fix, focus stayed on the input and the full string typed correctly ("Juan"). Confirmed the regression is real by stashing the fix and re-running the identical test before restoring it. `Modal.tsx` has no other current callers, so this fix doesn't touch any other flow.
+
+---
+
+## 19. Starter Plan price reverted from ₱499 back to ₱299 [2026-09-16]
+
+Companion to clienthub's CLAUDE.md §21 and the marketing site's CLAUDE.md §23: the operator reverted the /foryourbusiness offer's price back to ₱299, five days after the §17 raise.
+
+**Changed:**
+- `functions/_lib/pricing.ts`: this app's own copy of the `starter` catalog entry's `chargeNowPhp` is 299 again.
+- `src/pages/ClientDetailPage.tsx`: the staff-facing "Set Plan" override dropdown's Starter label reverted from "Starter Plan (₱499)" back to "Starter Plan (₱299)".
+
+**Left unchanged, same as §17:** `functions/api/app/clients/[id]/set-plan.ts`'s header comment still quotes the operator's original instruction verbatim ("All clients start at starter plan 299..."), unaffected either way since it already said 299.
+
+**How this was tested:** `npm run build`, `npx tsc -p functions/tsconfig.json --noEmit`, and `npm run lint` all passed clean. Grepped the whole repo for "499" afterward and confirmed no Starter Plan price mention remains at that number (the unrelated ₱1,499 domain-upsell offer elsewhere in this app is untouched, it was never part of this price change either direction).
