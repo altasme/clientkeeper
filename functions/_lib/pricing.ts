@@ -3,10 +3,21 @@
 // *plan*, not individual add-ons). Copied from clienthub's
 // functions/_lib/pricing.ts rather than shared — see this repo's CLAUDE.md
 // §0 for why the two apps' server layers are deliberately independent.
-// Ids MUST match clienthub's copy exactly (both the frontend
+// Ids for the four real, purchasable plans (starter/basic/essential/
+// business) MUST match clienthub's copy exactly (both the frontend
 // src/content/pricing.ts there and this file's own functions/_lib/
 // pricing.ts) — a client's `subscriptions.item_id` is read by both apps.
-
+//
+// "free" and "299" (added 2026-09-16, CLAUDE.md §19) are the one deliberate
+// exception: ClientKeeper-only placeholder plans, not present in
+// clienthub's catalog at all. They exist purely as labels the "Set Plan"
+// override can assign for record-keeping — they do nothing (no renewal
+// math beyond the shared `addInterval`-if-`renewalPhp` logic every plan
+// already goes through, no clienthub checkout, no unlock behavior tied to
+// them). clienthub's AccountPage.tsx already tolerates an unrecognized
+// itemId gracefully (findPlan() returns undefined, it just skips the
+// "included features" list and still shows the stored itemName/amount
+// snapshot), so this doesn't need a matching clienthub-side catalog entry.
 export type BillingCycle = "one_time" | "annual" | "monthly";
 
 export interface PlanCatalogItem {
@@ -25,6 +36,8 @@ export interface PlanCatalogItem {
 // that already includes (basic-domain) renewal — see clienthub's
 // functions/_lib/pricing.ts for the full note.
 export const PLAN_CATALOG: PlanCatalogItem[] = [
+  { id: "free", name: "Free Plan", billing: "one_time", chargeNowPhp: 0 },
+  { id: "299", name: "299 Plan", billing: "one_time", chargeNowPhp: 299 },
   { id: "starter", name: "Starter Plan", billing: "one_time", chargeNowPhp: 299 },
   { id: "basic", name: "Basic Plan", billing: "annual", chargeNowPhp: 1500, renewalPhp: 1500 },
   { id: "essential", name: "Essential Plan", billing: "annual", chargeNowPhp: 5700, renewalPhp: 4200 },

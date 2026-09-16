@@ -143,6 +143,8 @@ export interface ClientDetail {
     facebook: string | null;
     current_website: string | null;
     invitation_status: string;
+    domain_expires_at: string | null;
+    plan_renewal_date: string | null;
     created_at: string;
     updated_at: string;
   };
@@ -219,6 +221,21 @@ export function setClientPlan(id: string, planId: string): Promise<{ ok: true; p
 
 export function setProjectWebsite(id: string, websiteUrl: string): Promise<{ ok: true; websiteUrl: string | null }> {
   return apiFetch(`/api/app/projects/${id}/website`, { method: "POST", body: JSON.stringify({ websiteUrl }) });
+}
+
+export function setClientDates(
+  id: string,
+  fields: { domainExpiresAt?: string | null; planRenewalDate?: string | null }
+): Promise<{ ok: true; domainExpiresAt: string | null; planRenewalDate: string | null }> {
+  return apiFetch(`/api/app/clients/${id}/set-dates`, { method: "POST", body: JSON.stringify(fields) });
+}
+
+export function sendWsaLink(id: string): Promise<{ ok: true }> {
+  return apiFetch(`/api/app/clients/${id}/send-wsa`, { method: "POST" });
+}
+
+export function deleteClient(id: string): Promise<{ ok: true }> {
+  return apiFetch(`/api/app/clients/${id}`, { method: "DELETE" });
 }
 
 // ---------------------------------------------------------------------------

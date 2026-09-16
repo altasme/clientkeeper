@@ -63,3 +63,27 @@ export function accountReminderEmail(params: { clientName: string; businessName:
 
   return { subject: `Complete Your Account Setup: ${businessName || "Altaventures"}`, html };
 }
+
+// The marketing site's standalone e-signature route (altaventureswebsite's
+// CLAUDE.md §17) — not part of this app, not part of clienthub, a separate
+// unlinked /WSA-free page reached only by direct URL. Staff send this link
+// straight to the client so they don't have to be handed it verbally/over
+// chat every time (CLAUDE.md §19's "Send WSA" action).
+export const WSA_AGREEMENT_URL = "https://altasme.com/WSA-free";
+
+export function wsaAgreementEmail(params: { clientName: string; businessName: string }): {
+  subject: string;
+  html: string;
+} {
+  const { clientName, businessName } = params;
+  const greetingName = clientName || businessName || "there";
+
+  const html = `
+    <p>Hi ${escapeHtml(greetingName)},</p>
+    <p>Here is your Free Website Service Agreement for <strong>${escapeHtml(businessName)}</strong>. Please review it and sign electronically using the link below.</p>
+    <p><a href="${WSA_AGREEMENT_URL}">Click here to review and sign the agreement</a>.</p>
+    <p>If you have any questions before signing, just reply to this email.</p>
+  `;
+
+  return { subject: `Your Website Service Agreement: ${businessName || "Altaventures"}`, html };
+}

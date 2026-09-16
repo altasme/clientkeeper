@@ -7,6 +7,33 @@
 // payments, and the activity timeline. One query per related table rather
 // than a giant join, since the row counts here are all small (a client has
 // one project, a handful of offers/payments/activity entries at most).
+//
+// DELETE /api/app/clients/:id
+//
+// CLAUDE.md §19's "Admin can delete client records": a genuinely
+// destructive, irreversible action, so it cascades carefully rather than
+// relying on database-level ON DELETE behavior (D1 enforces declared
+// foreign keys, and several tables here declare one against `clients`).
+// Two different fates for the client's related rows:
+//   - Operational/workflow data (projects and everything under it,
+//     subscriptions, client_activity, businesses) is deleted outright —
+//     it has no meaning once the client record it describes is gone.
+//   - Financial/audit records (payments, bills) are preserved. `payments`
+//     has no FK to `clients` at all (see d1/schema.sql's own note on why
+//     that constraint was dropped), so those rows are simply left as-is,
+//     orphaned by id, same tolerance the schema already documents.
+//     `bills.client_id` DOES have a declared FK, so it's set to NULL
+//     first — the bill itself (its recipient_name/email, line items,
+//     payment history) is real money that happened and must survive; only
+//     the link back to a client record that no longer exists is severed.
+// Every statement runs in a single `db.batch()` for atomicity: either the
+// whole cascade lands, or none of it does. The audit_log row is written
+// inside the same batch, WITH the client's full snapshot as `before`
+// (audit_log.entity_id has no FK to clients, so it's the one place this
+// deletion stays reconstructable afterward) — captured before the batch
+// runs, since by the time it commits the client row is gone.
+
+import type { StaffUser } from "../../../_lib/roles";
 
 interface Env {
   DB?: D1Database;
@@ -24,7 +51,7 @@ export const onRequestGet: PagesFunction<Env, "id"> = async ({ env, params }) =>
   const client = await db
     .prepare(
       `SELECT id, workos_user_id, email, full_name, business_name, mobile, facebook, current_website,
-              invitation_status, created_at, updated_at
+              invitation_status, domain_expires_at, plan_renewal_date, created_at, updated_at
        FROM clients WHERE id = ?`
     )
     .bind(clientId)
@@ -38,6 +65,8 @@ export const onRequestGet: PagesFunction<Env, "id"> = async ({ env, params }) =>
       facebook: string | null;
       current_website: string | null;
       invitation_status: string;
+      domain_expires_at: string | null;
+      plan_renewal_date: string | null;
       created_at: string;
       updated_at: string;
     }>();
@@ -143,4 +172,45 @@ export const onRequestGet: PagesFunction<Env, "id"> = async ({ env, params }) =>
     activity: activityResult.results,
     subscriptions: subscriptionsResult.results,
   });
+};
+
+export const onRequestDelete: PagesFunction<Env, "id", { staffUser: StaffUser }> = async ({ env, params, data }) => {
+  if (!env.DB) return jsonResponse(500, { error: "Not configured" });
+  const db = env.DB;
+  const clientId = params.id;
+
+  const client = await db.prepare(`SELECT * FROM clients WHERE id = ?`).bind(clientId).first<Record<string, unknown>>();
+  if (!client) return jsonResponse(404, { error: "Client not found" });
+
+  const now = new Date().toISOString();
+
+  await db.batch([
+    // Offer-adjacent rows first (offer_events references offers.id).
+    db.prepare(`DELETE FROM offer_events WHERE offer_id IN (SELECT id FROM offers WHERE client_id = ?)`).bind(clientId),
+    db.prepare(`DELETE FROM offers WHERE client_id = ?`).bind(clientId),
+    // Project-adjacent rows, while projects for this client still exist.
+    db.prepare(`DELETE FROM stage_history WHERE project_id IN (SELECT id FROM projects WHERE client_id = ?)`).bind(clientId),
+    db.prepare(`DELETE FROM discovery_sessions WHERE project_id IN (SELECT id FROM projects WHERE client_id = ?)`).bind(clientId),
+    db.prepare(`DELETE FROM presentations WHERE project_id IN (SELECT id FROM projects WHERE client_id = ?)`).bind(clientId),
+    db.prepare(`DELETE FROM projects WHERE client_id = ?`).bind(clientId),
+    // Everything else keyed directly on client_id.
+    db.prepare(`DELETE FROM subscriptions WHERE client_id = ?`).bind(clientId),
+    db.prepare(`DELETE FROM client_activity WHERE client_id = ?`).bind(clientId),
+    db.prepare(`DELETE FROM businesses WHERE client_id = ?`).bind(clientId),
+    // Financial records are preserved, only unlinked (see this file's
+    // header comment for why).
+    db.prepare(`UPDATE bills SET client_id = NULL WHERE client_id = ?`).bind(clientId),
+    // The audit trail for the deletion itself, captured before the row
+    // that's about to disappear. entity_id intentionally still points at
+    // the now-deleted client id — audit_log has no FK back to clients.
+    db
+      .prepare(
+        `INSERT INTO audit_log (id, actor_id, action, entity_type, entity_id, before, after, reason, created_at)
+         VALUES (?, ?, 'client_deleted', 'client', ?, ?, NULL, NULL, ?)`
+      )
+      .bind(crypto.randomUUID(), data.staffUser.id, clientId, JSON.stringify(client), now),
+    db.prepare(`DELETE FROM clients WHERE id = ?`).bind(clientId),
+  ]);
+
+  return jsonResponse(200, { ok: true });
 };

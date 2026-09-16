@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import {
   fetchClientDetail,
   addClientActivity,
@@ -13,6 +13,9 @@ import {
   recordOfferDecision,
   setClientPlan,
   setProjectWebsite,
+  setClientDates,
+  sendWsaLink,
+  deleteClient,
   ApiError,
   type ClientDetail,
   type Stage,
@@ -32,7 +35,14 @@ function ensureAbsoluteUrl(url: string): string {
 // override dropdown — display-only here, the actual pricing math (amount,
 // renewal date) is computed server-side in set-plan.ts, never trusted from
 // the frontend. Keep in sync if the catalog ever changes.
+//
+// "free" and "299" are placeholder plans (CLAUDE.md §19) that do nothing
+// beyond recording a label and amount snapshot — no renewal math, no
+// clienthub checkout, no unlock behavior. Listed first since they're the
+// lowest-commitment options a staff member would reach for.
 const PLAN_OPTIONS: Array<{ id: string; name: string }> = [
+  { id: "free", name: "Free Plan (₱0)" },
+  { id: "299", name: "299 Plan (₱299)" },
   { id: "starter", name: "Starter Plan (₱299)" },
   { id: "basic", name: "Basic Plan (₱1,500/yr)" },
   { id: "essential", name: "Essential Plan (₱1,500 + ₱4,200/yr)" },
@@ -61,6 +71,7 @@ function ErrorBanner({ message }: { message: string | null }) {
 
 export default function ClientDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const [detail, setDetail] = useState<ClientDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -89,6 +100,22 @@ export default function ClientDetailPage() {
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Something went wrong.");
     } finally {
+      setBusy(false);
+    }
+  };
+
+  // Deliberately not routed through run() — a successful delete leaves
+  // nothing here to reload (the client record is gone), so it navigates
+  // away instead.
+  const handleDelete = async () => {
+    if (!id) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await deleteClient(id);
+      navigate("/clients");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Something went wrong.");
       setBusy(false);
     }
   };
@@ -128,16 +155,35 @@ export default function ClientDetailPage() {
             <div className="flex justify-between"><dt className="text-ink/50">Existing site</dt><dd>{client.current_website || "—"}</dd></div>
             <div className="flex justify-between"><dt className="text-ink/50">Client since</dt><dd>{new Date(client.created_at).toLocaleDateString()}</dd></div>
           </dl>
-          {client.invitation_status !== "accepted" && (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {client.invitation_status !== "accepted" && (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => run(() => resendInvite(client.id))}
+                className="rounded-full border border-brand-blue px-4 py-1.5 text-xs font-semibold text-brand-blue hover:bg-brand-blue hover:text-white disabled:opacity-50"
+              >
+                Resend Account Setup Email
+              </button>
+            )}
             <button
               type="button"
               disabled={busy}
-              onClick={() => run(() => resendInvite(client.id))}
-              className="mt-3 rounded-full border border-brand-blue px-4 py-1.5 text-xs font-semibold text-brand-blue hover:bg-brand-blue hover:text-white disabled:opacity-50"
+              onClick={() => run(() => sendWsaLink(client.id))}
+              className="rounded-full border border-brand-blue px-4 py-1.5 text-xs font-semibold text-brand-blue hover:bg-brand-blue hover:text-white disabled:opacity-50"
             >
-              Resend Account Setup Email
+              Send Website Service Agreement
             </button>
-          )}
+          </div>
+        </Card>
+
+        <Card title="Dates">
+          <DatesBlock
+            domainExpiresAt={client.domain_expires_at}
+            planRenewalDate={client.plan_renewal_date}
+            busy={busy}
+            onSave={(fields) => run(() => setClientDates(client.id, fields))}
+          />
         </Card>
 
         <Card title="Project & Stage">
@@ -349,6 +395,10 @@ export default function ClientDetailPage() {
         <Card title="Activity & Notes">
           <ActivityBlock activity={activity} busy={busy} onAdd={(note) => run(() => addClientActivity(client.id, note))} />
         </Card>
+
+        <Card title="Danger Zone">
+          <DeleteClientControl businessName={client.business_name} busy={busy} onDelete={handleDelete} />
+        </Card>
       </div>
     </div>
   );
@@ -504,6 +554,123 @@ function PlanBlock({
         </button>
       </div>
       <p className="mt-1.5 text-[11px] text-ink/40">Overrides the client's current plan without charging them &mdash; for corrections or comps.</p>
+    </div>
+  );
+}
+
+function DatesBlock({
+  domainExpiresAt,
+  planRenewalDate,
+  busy,
+  onSave,
+}: {
+  domainExpiresAt: string | null;
+  planRenewalDate: string | null;
+  busy: boolean;
+  onSave: (fields: { domainExpiresAt: string | null; planRenewalDate: string | null }) => void;
+}) {
+  // Dates are stored as whatever staff typed (ISO-ish strings from a
+  // datetime, or an "YYYY-MM-DD" from this <input type="date">) — slice to
+  // the first 10 chars so a full ISO timestamp still populates the date
+  // input correctly instead of failing to parse.
+  const [domain, setDomain] = useState(domainExpiresAt ? domainExpiresAt.slice(0, 10) : "");
+  const [renewal, setRenewal] = useState(planRenewalDate ? planRenewalDate.slice(0, 10) : "");
+
+  return (
+    <div className="space-y-3">
+      <div>
+        <label className="text-xs font-semibold text-ink/50">Domain expiration date</label>
+        <input
+          type="date"
+          value={domain}
+          onChange={(e) => setDomain(e.target.value)}
+          className="mt-1 w-full rounded border border-ink/15 px-2 py-1.5 text-xs"
+        />
+      </div>
+      <div>
+        <label className="text-xs font-semibold text-ink/50">Plan renewal date</label>
+        <input
+          type="date"
+          value={renewal}
+          onChange={(e) => setRenewal(e.target.value)}
+          className="mt-1 w-full rounded border border-ink/15 px-2 py-1.5 text-xs"
+        />
+      </div>
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => onSave({ domainExpiresAt: domain || null, planRenewalDate: renewal || null })}
+        className="rounded-full bg-brand-blue px-4 py-1.5 text-xs font-semibold text-white hover:bg-[#0b57cc] disabled:opacity-50"
+      >
+        Save Dates
+      </button>
+      <p className="text-[11px] text-ink/40">Staff-entered record-keeping only &mdash; not tied to any plan's auto-computed renewal math.</p>
+    </div>
+  );
+}
+
+function DeleteClientControl({
+  businessName,
+  busy,
+  onDelete,
+}: {
+  businessName: string;
+  busy: boolean;
+  onDelete: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [confirmText, setConfirmText] = useState("");
+
+  if (!open) {
+    return (
+      <div>
+        <p className="text-xs text-ink/50">Permanently delete this client and their project, offers, and activity history.</p>
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="mt-3 rounded-full border border-red-600 px-4 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-600 hover:text-white"
+        >
+          Delete Client&hellip;
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2 rounded-lg border border-red-200 bg-red-50 p-3">
+      <p className="text-xs font-semibold text-red-700">This cannot be undone.</p>
+      <p className="text-xs text-red-700">
+        Deletes this client, their project, offers, and activity history. Payments and bills are kept but unlinked from this client.
+      </p>
+      <p className="text-xs text-ink/60">
+        Type <span className="font-semibold">{businessName}</span> to confirm.
+      </p>
+      <input
+        type="text"
+        value={confirmText}
+        onChange={(e) => setConfirmText(e.target.value)}
+        className="w-full rounded border border-ink/15 px-2 py-1.5 text-xs"
+      />
+      <div className="flex gap-2">
+        <button
+          type="button"
+          disabled={busy || confirmText !== businessName}
+          onClick={onDelete}
+          className="rounded-full bg-red-600 px-3 py-1 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+        >
+          Permanently Delete
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setOpen(false);
+            setConfirmText("");
+          }}
+          className="text-xs text-ink/50 hover:text-ink"
+        >
+          Cancel
+        </button>
+      </div>
     </div>
   );
 }
