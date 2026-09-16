@@ -48,13 +48,14 @@ function computeDomainExpiration(domainRegisteredAt: string): string {
 // renewal date) is computed server-side in set-plan.ts, never trusted from
 // the frontend. Keep in sync if the catalog ever changes.
 //
-// "free" and "299" are placeholder plans (CLAUDE.md §19) that do nothing
-// beyond recording a label and amount snapshot — no renewal math, no
-// clienthub checkout, no unlock behavior. Listed first since they're the
-// lowest-commitment options a staff member would reach for.
+// "free", "299", and "partnership" are placeholder plans (CLAUDE.md §19/§21)
+// that do nothing beyond recording a label and amount snapshot — no renewal
+// math, no clienthub checkout, no unlock behavior. Listed first since
+// they're the lowest-commitment options a staff member would reach for.
 const PLAN_OPTIONS: Array<{ id: string; name: string }> = [
   { id: "free", name: "Free Plan (₱0)" },
   { id: "299", name: "299 Plan (₱299)" },
+  { id: "partnership", name: "Partnership Arrangement (no fixed price)" },
   { id: "starter", name: "Starter Plan (₱299)" },
   { id: "basic", name: "Basic Plan (₱1,500/yr)" },
   { id: "essential", name: "Essential Plan (₱1,500 + ₱4,200/yr)" },
