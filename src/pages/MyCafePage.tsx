@@ -42,6 +42,12 @@ export default function MyCafePage() {
       if (result.deviceActivationToken) {
         setTokenResult({ clientId, token: result.deviceActivationToken });
       }
+      if (result.status !== "active") {
+        setError(
+          `Provisioning didn't finish (still "${result.status}"): ${result.error ?? "no reason given"}. ` +
+            `Click "Resume provisioning" to retry from where it stopped.`,
+        );
+      }
       load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not provision this cafe.");

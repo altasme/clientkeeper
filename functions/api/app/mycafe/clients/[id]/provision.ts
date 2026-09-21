@@ -77,7 +77,9 @@ export const onRequestPost: PagesFunction<Env, "id", { staffUser: StaffUser }> =
     .bind(
       crypto.randomUUID(),
       clientId,
-      result.status === "active" ? "MyCafe cafe provisioned and active" : "MyCafe provisioning attempted, still in progress",
+      result.status === "active"
+        ? "MyCafe cafe provisioned and active"
+        : `MyCafe provisioning did not finish: ${result.error ?? "unknown error"}`,
       data.staffUser.id,
       now,
     )
@@ -88,12 +90,23 @@ export const onRequestPost: PagesFunction<Env, "id", { staffUser: StaffUser }> =
       `INSERT INTO audit_log (id, actor_id, action, entity_type, entity_id, before, after, reason, created_at)
        VALUES (?, ?, 'mycafe_provision', 'client', ?, NULL, ?, NULL, ?)`,
     )
-    .bind(crypto.randomUUID(), data.staffUser.id, clientId, JSON.stringify({ cafeId: result.cafeId, status: result.status }), now)
+    .bind(
+      crypto.randomUUID(),
+      data.staffUser.id,
+      clientId,
+      JSON.stringify({ cafeId: result.cafeId, status: result.status, error: result.error }),
+      now,
+    )
     .run();
 
+  // A 202/"provisioning" response from MyCafe is not a success this route
+  // should mask — result.error is MyCafe's own explanation of what step
+  // failed, and it's the only place staff can see it, since this UI has no
+  // other window into MyCafe's provisioning_steps ledger.
   return jsonResponse(200, {
     cafeId: result.cafeId,
     status: result.status,
     deviceActivationToken: result.deviceActivationToken,
+    error: result.status === "active" ? undefined : (result.error ?? "MyCafe did not report a reason"),
   });
 };
