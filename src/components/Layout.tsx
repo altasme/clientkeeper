@@ -2,6 +2,11 @@ import { NavLink, Outlet } from "react-router-dom";
 import { useMe } from "../lib/MeContext";
 import { logout } from "../lib/api";
 
+// Web development is this app's original, and still primary, funnel — the
+// nav items above reflect its stage machine. MyCafe POS is a second, later,
+// unrelated product line (a SaaS product, not a services funnel), so it's
+// grouped as its own section below rather than interleaved as one more step
+// in the web_dev flow.
 const NAV_ITEMS = [
   { label: "Dashboard", to: "/" },
   { label: "Leads", to: "/leads" },
@@ -12,8 +17,11 @@ const NAV_ITEMS = [
   { label: "Offers", to: "/offers" },
   { label: "Billing", to: "/billing" },
   { label: "Payments", to: "/payments" },
-  { label: "Settings", to: "/settings" },
 ];
+
+const PRODUCT_NAV_ITEMS = [{ label: "MyCafe POS", to: "/mycafe" }];
+
+const SETTINGS_NAV_ITEM = { label: "Settings", to: "/settings" };
 
 export default function Layout() {
   const { staffUser } = useMe();
@@ -45,6 +53,32 @@ export default function Layout() {
               {item.label}
             </NavLink>
           ))}
+          <p className="px-3 pb-1 pt-4 text-[11px] font-semibold uppercase tracking-wide text-ink/30">Products</p>
+          {PRODUCT_NAV_ITEMS.map((item) => (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              className={({ isActive }) =>
+                `block rounded-lg px-3 py-2 text-sm font-medium transition ${
+                  isActive ? "bg-brand-blue text-white" : "text-ink/70 hover:bg-paper-alt hover:text-ink"
+                }`
+              }
+            >
+              {item.label}
+            </NavLink>
+          ))}
+          <div className="pt-4">
+            <NavLink
+              to={SETTINGS_NAV_ITEM.to}
+              className={({ isActive }) =>
+                `block rounded-lg px-3 py-2 text-sm font-medium transition ${
+                  isActive ? "bg-brand-blue text-white" : "text-ink/70 hover:bg-paper-alt hover:text-ink"
+                }`
+              }
+            >
+              {SETTINGS_NAV_ITEM.label}
+            </NavLink>
+          </div>
         </nav>
         <div className="border-t border-ink/10 px-4 py-4">
           <p className="truncate text-sm font-semibold text-ink">{staffUser.full_name || staffUser.email}</p>

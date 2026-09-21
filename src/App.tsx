@@ -14,6 +14,7 @@ import NewBillPage from "./pages/NewBillPage";
 import BillDetailPage from "./pages/BillDetailPage";
 import PaymentsPage from "./pages/PaymentsPage";
 import SettingsPage from "./pages/SettingsPage";
+import MyCafePage from "./pages/MyCafePage";
 
 function App() {
   return (
@@ -32,6 +33,7 @@ function App() {
           <Route path="/billing/new" element={<NewBillPage />} />
           <Route path="/billing/:id" element={<BillDetailPage />} />
           <Route path="/payments" element={<PaymentsPage />} />
+          <Route path="/mycafe" element={<MyCafePage />} />
           <Route path="/settings" element={<SettingsPage />} />
         </Route>
       </Routes>
