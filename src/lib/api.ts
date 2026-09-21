@@ -165,6 +165,11 @@ export interface MyCafeProvisionResult {
   cafeId: string;
   status: "active" | "provisioning";
   deviceActivationToken?: string;
+  // Set whenever status !== "active" — MyCafe's own explanation of which
+  // provisioning step failed. Surface this; a silent "provisioning" status
+  // with no reason leaves staff unable to tell a stuck cafe from one still
+  // mid-flight.
+  error?: string;
 }
 
 export function provisionMyCafeClient(clientId: string): Promise<MyCafeProvisionResult> {
