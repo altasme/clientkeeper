@@ -132,6 +132,49 @@ export function createClient(fields: {
   return apiFetch(`/api/app/clients`, { method: "POST", body: JSON.stringify(fields) });
 }
 
+// MyCafe POS — a second product line, deliberately separate from the
+// web_dev clients/projects/stage machine above (see clientkeeper's CLAUDE.md
+// MyCafe section). A MyCafe client only ever has these fields; there's no
+// stage, no project, no discovery/presentation/offer concepts for it.
+
+export interface MyCafeClientRow {
+  id: string;
+  fullName: string;
+  businessName: string;
+  email: string;
+  mycafeCafeId: string | null;
+  mycafeStatus: string | null;
+  createdAt: string;
+}
+
+export function fetchMyCafeClients(): Promise<MyCafeClientRow[]> {
+  return apiFetch(`/api/app/mycafe/clients`);
+}
+
+export function createMyCafeClient(fields: {
+  fullName: string;
+  businessName: string;
+  email: string;
+  storeName: string;
+  slug: string;
+}): Promise<{ id: string; createdAt: string }> {
+  return apiFetch(`/api/app/mycafe/clients`, { method: "POST", body: JSON.stringify(fields) });
+}
+
+export interface MyCafeProvisionResult {
+  cafeId: string;
+  status: "active" | "provisioning";
+  deviceActivationToken?: string;
+}
+
+export function provisionMyCafeClient(clientId: string): Promise<MyCafeProvisionResult> {
+  return apiFetch(`/api/app/mycafe/clients/${clientId}/provision`, { method: "POST" });
+}
+
+export function mintMyCafeDeviceToken(clientId: string): Promise<{ deviceActivationToken: string }> {
+  return apiFetch(`/api/app/mycafe/clients/${clientId}/new-device`, { method: "POST" });
+}
+
 export interface ClientDetail {
   client: {
     id: string;
