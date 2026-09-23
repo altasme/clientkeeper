@@ -5,7 +5,7 @@
 // just because the client asked. Same one-time-return rule as provision.ts:
 // the token is in the response body once and never stored here.
 import { mintMyCafeDevice, MyCafeApiError, type MyCafeEnv } from "../../../../../_lib/mycafe";
-import type { StaffUser } from "../../../../../_lib/roles";
+import { isMyCafeAdmin, type StaffUser } from "../../../../../_lib/roles";
 
 interface Env extends MyCafeEnv {
   DB?: D1Database;
@@ -17,6 +17,9 @@ function jsonResponse(status: number, body: unknown): Response {
 
 export const onRequestPost: PagesFunction<Env, "id", { staffUser: StaffUser }> = async ({ env, params, data }) => {
   if (!env.DB) return jsonResponse(500, { error: "Not configured" });
+  if (!isMyCafeAdmin(data.staffUser)) {
+    return jsonResponse(403, { error: "Only owner/admin can mint a MyCafe device token" });
+  }
   if (!env.MYCAFE_ADMIN_API_TOKEN || !env.MYCAFE_CONTROL_PLANE_URL) {
     return jsonResponse(500, { error: "MyCafe integration is not configured (MYCAFE_ADMIN_API_TOKEN/MYCAFE_CONTROL_PLANE_URL)" });
   }
@@ -46,6 +49,17 @@ export const onRequestPost: PagesFunction<Env, "id", { staffUser: StaffUser }> =
        VALUES (?, ?, 'mycafe_new_device', 'A new MyCafe device token was issued', ?, ?)`,
     )
     .bind(crypto.randomUUID(), clientId, data.staffUser.id, now)
+    .run();
+
+  // Records that a token was minted, deliberately never the token itself
+  // (this route's own header comment, and CLAUDE.md's rule for every place
+  // that ever sees one in plaintext).
+  await db
+    .prepare(
+      `INSERT INTO audit_log (id, actor_id, action, entity_type, entity_id, before, after, reason, created_at)
+       VALUES (?, ?, 'mycafe_new_device', 'client', ?, NULL, NULL, NULL, ?)`,
+    )
+    .bind(crypto.randomUUID(), data.staffUser.id, clientId, now)
     .run();
 
   return jsonResponse(200, { deviceActivationToken });

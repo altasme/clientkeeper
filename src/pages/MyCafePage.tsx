@@ -1,12 +1,33 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   fetchMyCafeClients,
+  fetchMyCafeDashboard,
   provisionMyCafeClient,
   mintMyCafeDeviceToken,
+  isMyCafeAdmin,
   ApiError,
   type MyCafeClientRow,
+  type MyCafeDashboard,
 } from "../lib/api";
+import { useMe } from "../lib/MeContext";
 import AddMyCafeClientModal from "../components/AddMyCafeClientModal";
+
+const STATUS_OPTIONS = [
+  { value: "", label: "All statuses" },
+  { value: "active", label: "Active" },
+  { value: "provisioning", label: "Provisioning" },
+  { value: "not_provisioned", label: "Not provisioned" },
+];
+
+const COUNT_TILES: { key: keyof MyCafeDashboard["counts"]; label: string }[] = [
+  { key: "totalBusinesses", label: "Total Businesses" },
+  { key: "activeBusinesses", label: "Active (Paid)" },
+  { key: "trialBusinesses", label: "Trial" },
+  { key: "expiredBusinesses", label: "Expired" },
+  { key: "registeredDevices", label: "Registered Devices" },
+  { key: "activeDevices", label: "Active Devices" },
+];
 
 // MyCafe POS clients: a second product line, deliberately kept off the
 // web_dev Clients page and its stage machine (see CLAUDE.md's MyCafe
@@ -16,22 +37,41 @@ import AddMyCafeClientModal from "../components/AddMyCafeClientModal";
 // it clearly right after the call and make staff copy it before navigating
 // away, not to make it retrievable later.
 export default function MyCafePage() {
+  const { staffUser } = useMe();
+  const canAdminister = isMyCafeAdmin(staffUser);
+
+  const [dashboard, setDashboard] = useState<MyCafeDashboard | null>(null);
+  const [dashboardError, setDashboardError] = useState<string | null>(null);
+
   const [clients, setClients] = useState<MyCafeClientRow[]>([]);
+  const [q, setQ] = useState("");
+  const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [busyClientId, setBusyClientId] = useState<string | null>(null);
   const [tokenResult, setTokenResult] = useState<{ clientId: string; token: string } | null>(null);
 
+  useEffect(() => {
+    fetchMyCafeDashboard()
+      .then(setDashboard)
+      .catch((err) => setDashboardError(err instanceof ApiError ? err.message : "Could not load the overview."));
+  }, []);
+
   const load = () => {
     setLoading(true);
-    fetchMyCafeClients()
+    fetchMyCafeClients({ q: q || undefined, status: status || undefined })
       .then(setClients)
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
   };
 
-  useEffect(load, []);
+  useEffect(() => {
+    setLoading(true);
+    const handle = setTimeout(load, 250);
+    return () => clearTimeout(handle);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [q, status]);
 
   const handleProvision = async (clientId: string) => {
     setBusyClientId(clientId);
@@ -86,6 +126,39 @@ export default function MyCafePage() {
         </button>
       </div>
 
+      {dashboardError && <p className="mt-4 text-sm text-red-600">{dashboardError}</p>}
+      {dashboard && (
+        <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
+          {COUNT_TILES.map((tile) => (
+            <div key={tile.key} className="rounded-xl border border-ink/10 bg-white p-4">
+              <p className="text-2xl font-bold text-brand-navy">{dashboard.counts[tile.key]}</p>
+              <p className="mt-1 text-xs text-ink/50">{tile.label}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="mt-6 flex flex-wrap items-center gap-3">
+        <input
+          type="text"
+          placeholder="Search owner, business, or email"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          className="w-72 rounded-lg border border-ink/15 px-3 py-2 text-sm outline-none focus:border-brand-blue"
+        />
+        <select
+          value={status}
+          onChange={(e) => setStatus(e.target.value)}
+          className="rounded-lg border border-ink/15 px-3 py-2 text-sm outline-none focus:border-brand-blue"
+        >
+          {STATUS_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
+      </div>
+
       {error && <p className="mt-4 text-sm text-red-600">{error}</p>}
 
       {tokenResult && (
@@ -106,13 +179,17 @@ export default function MyCafePage() {
               <th className="px-4 py-3">Business</th>
               <th className="px-4 py-3">Email</th>
               <th className="px-4 py-3">Status</th>
-              <th className="px-4 py-3">Actions</th>
+              {canAdminister && <th className="px-4 py-3">Actions</th>}
             </tr>
           </thead>
           <tbody>
             {clients.map((c) => (
               <tr key={c.id} className="border-b border-ink/5 last:border-0 hover:bg-paper-alt">
-                <td className="px-4 py-3 font-semibold text-ink">{c.fullName}</td>
+                <td className="px-4 py-3 font-semibold text-ink">
+                  <Link to={`/mycafe/${c.id}`} className="text-brand-blue hover:underline">
+                    {c.fullName}
+                  </Link>
+                </td>
                 <td className="px-4 py-3 text-ink/70">{c.businessName}</td>
                 <td className="px-4 py-3 text-ink/70">{c.email}</td>
                 <td className="px-4 py-3">
@@ -128,39 +205,58 @@ export default function MyCafePage() {
                     {c.mycafeStatus ?? "not provisioned"}
                   </span>
                 </td>
-                <td className="px-4 py-3">
-                  {c.mycafeStatus === "active" ? (
-                    <button
-                      type="button"
-                      disabled={busyClientId === c.id}
-                      onClick={() => handleNewDevice(c.id)}
-                      className="rounded-full border border-ink/15 px-3 py-1 text-xs font-semibold text-ink/70 hover:bg-paper-alt disabled:opacity-50"
-                    >
-                      {busyClientId === c.id ? "Working…" : "New device token"}
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      disabled={busyClientId === c.id}
-                      onClick={() => handleProvision(c.id)}
-                      className="rounded-full bg-brand-blue px-3 py-1 text-xs font-semibold text-white hover:bg-[#0b57cc] disabled:opacity-50"
-                    >
-                      {busyClientId === c.id ? "Working…" : c.mycafeCafeId ? "Resume provisioning" : "Provision"}
-                    </button>
-                  )}
-                </td>
+                {canAdminister && (
+                  <td className="px-4 py-3">
+                    {c.mycafeStatus === "active" ? (
+                      <button
+                        type="button"
+                        disabled={busyClientId === c.id}
+                        onClick={() => handleNewDevice(c.id)}
+                        className="rounded-full border border-ink/15 px-3 py-1 text-xs font-semibold text-ink/70 hover:bg-paper-alt disabled:opacity-50"
+                      >
+                        {busyClientId === c.id ? "Working…" : "New device token"}
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled={busyClientId === c.id}
+                        onClick={() => handleProvision(c.id)}
+                        className="rounded-full bg-brand-blue px-3 py-1 text-xs font-semibold text-white hover:bg-[#0b57cc] disabled:opacity-50"
+                      >
+                        {busyClientId === c.id ? "Working…" : c.mycafeCafeId ? "Resume provisioning" : "Provision"}
+                      </button>
+                    )}
+                  </td>
+                )}
               </tr>
             ))}
             {!loading && clients.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-4 py-6 text-center text-ink/40">
-                  No MyCafe clients yet.
+                <td colSpan={canAdminister ? 5 : 4} className="px-4 py-6 text-center text-ink/40">
+                  {q || status ? "No MyCafe clients match." : "No MyCafe clients yet."}
                 </td>
               </tr>
             )}
           </tbody>
         </table>
       </div>
+
+      {dashboard && dashboard.recentActivity.length > 0 && (
+        <div className="mt-8">
+          <h2 className="text-lg font-bold text-brand-navy">Recent Activity</h2>
+          <ul className="mt-3 space-y-2 rounded-xl border border-ink/10 bg-white p-4 text-xs text-ink/60">
+            {dashboard.recentActivity.map((a) => (
+              <li key={a.id}>
+                <Link to={`/mycafe/${a.clientId}`} className="font-semibold text-ink/80 hover:text-brand-blue">
+                  {a.businessName}
+                </Link>{" "}
+                — {a.description}
+                <span className="ml-1 text-ink/40">({new Date(a.createdAt).toLocaleString()})</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <AddMyCafeClientModal open={addOpen} onClose={() => setAddOpen(false)} onCreated={() => { setAddOpen(false); load(); }} />
     </div>

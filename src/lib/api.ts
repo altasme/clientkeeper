@@ -32,6 +32,14 @@ export interface MeResponse {
   staffUser: StaffUser;
 }
 
+// Mirrors functions/_lib/roles.ts's isMyCafeAdmin exactly — display-only
+// here (hides buttons a non-admin's request would be rejected for anyway;
+// the server is what actually enforces this on every MyCafe provisioning/
+// device/licensing route).
+export function isMyCafeAdmin(staffUser: StaffUser): boolean {
+  return staffUser.role === "owner" || staffUser.role === "admin";
+}
+
 async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
   const res = await fetch(path, {
     ...options,
@@ -147,8 +155,102 @@ export interface MyCafeClientRow {
   createdAt: string;
 }
 
-export function fetchMyCafeClients(): Promise<MyCafeClientRow[]> {
-  return apiFetch(`/api/app/mycafe/clients`);
+export function fetchMyCafeClients(filters: { q?: string; status?: string } = {}): Promise<MyCafeClientRow[]> {
+  const params = new URLSearchParams();
+  if (filters.q) params.set("q", filters.q);
+  if (filters.status) params.set("status", filters.status);
+  const qs = params.toString();
+  return apiFetch(`/api/app/mycafe/clients${qs ? `?${qs}` : ""}`);
+}
+
+export interface MyCafeEntitlement {
+  state: string;
+  tier: string | null;
+  trialEndsAt: string;
+  daysRemaining: number;
+  currentPeriodEndsAt: string | null;
+}
+
+export interface MyCafeDashboard {
+  counts: {
+    totalBusinesses: number;
+    activeBusinesses: number;
+    trialBusinesses: number;
+    expiredBusinesses: number;
+    provisioningBusinesses: number;
+    registeredDevices: number;
+    activeDevices: number;
+  };
+  recentActivity: {
+    id: string;
+    clientId: string;
+    businessName: string;
+    type: string;
+    description: string;
+    createdAt: string;
+  }[];
+}
+
+export function fetchMyCafeDashboard(): Promise<MyCafeDashboard> {
+  return apiFetch(`/api/app/mycafe/dashboard`);
+}
+
+export interface MyCafeCafeDetail {
+  id: string;
+  slug: string;
+  businessName: string;
+  storeName: string;
+  ownerEmail: string;
+  ownerName: string;
+  status: "provisioning" | "active" | "suspended";
+  createdAt: string;
+  activatedAt: string | null;
+  entitlement: MyCafeEntitlement | null;
+  tier: string | null;
+  billingCycle: string | null;
+  branchLimit: number | null;
+  branches: { id: string; name: string; active: boolean; createdAt: string }[];
+}
+
+export interface MyCafeClientDetail {
+  client: {
+    id: string;
+    fullName: string;
+    businessName: string;
+    email: string;
+    mycafeSlug: string | null;
+    mycafeStoreName: string | null;
+    mycafeCafeId: string | null;
+    mycafeStatus: string | null;
+    createdAt: string;
+    updatedAt: string;
+  };
+  cafe: MyCafeCafeDetail | null;
+  cafeError: string | null;
+  activity: { id: string; type: string; description: string; actor_id: string | null; created_at: string }[];
+}
+
+export function fetchMyCafeClientDetail(clientId: string): Promise<MyCafeClientDetail> {
+  return apiFetch(`/api/app/mycafe/clients/${clientId}`);
+}
+
+export interface MyCafeDeviceRow {
+  id: string;
+  deviceName: string;
+  branchId: string | null;
+  branchName: string | null;
+  active: boolean;
+  createdAt: string;
+  deactivatedAt: string | null;
+  lastUsedAt: string | null;
+}
+
+export function fetchMyCafeDevices(clientId: string): Promise<MyCafeDeviceRow[]> {
+  return apiFetch(`/api/app/mycafe/clients/${clientId}/devices`);
+}
+
+export function revokeMyCafeDevice(clientId: string, deviceId: string): Promise<{ ok: boolean }> {
+  return apiFetch(`/api/app/mycafe/clients/${clientId}/devices/${deviceId}/revoke`, { method: "POST" });
 }
 
 export function createMyCafeClient(fields: {
