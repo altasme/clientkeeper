@@ -8,7 +8,7 @@
 // once). Staff must copy it from this response; there's no way to recover
 // it afterward short of minting a fresh one (new-device.ts).
 import { provisionMyCafeCafe, MyCafeApiError, type MyCafeEnv } from "../../../../../_lib/mycafe";
-import type { StaffUser } from "../../../../../_lib/roles";
+import { isMyCafeAdmin, type StaffUser } from "../../../../../_lib/roles";
 
 interface Env extends MyCafeEnv {
   DB?: D1Database;
@@ -20,6 +20,9 @@ function jsonResponse(status: number, body: unknown): Response {
 
 export const onRequestPost: PagesFunction<Env, "id", { staffUser: StaffUser }> = async ({ env, params, data }) => {
   if (!env.DB) return jsonResponse(500, { error: "Not configured" });
+  if (!isMyCafeAdmin(data.staffUser)) {
+    return jsonResponse(403, { error: "Only owner/admin can provision a MyCafe cafe" });
+  }
   if (!env.MYCAFE_ADMIN_API_TOKEN || !env.MYCAFE_CONTROL_PLANE_URL) {
     return jsonResponse(500, { error: "MyCafe integration is not configured (MYCAFE_ADMIN_API_TOKEN/MYCAFE_CONTROL_PLANE_URL)" });
   }

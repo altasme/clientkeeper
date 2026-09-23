@@ -21,21 +21,41 @@ function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 }
 
-export const onRequestGet: PagesFunction<Env> = async ({ env }) => {
+export const onRequestGet: PagesFunction<Env> = async ({ env, request }) => {
   if (!env.DB) return jsonResponse(500, { error: "Not configured" });
+
+  const url = new URL(request.url);
+  const q = url.searchParams.get("q")?.trim();
+  const status = url.searchParams.get("status")?.trim();
+
+  const conditions = ["product = 'mycafe_pos'"];
+  const params: unknown[] = [];
+  if (q) {
+    conditions.push("(full_name LIKE ? OR business_name LIKE ? OR email LIKE ?)");
+    const like = `%${q}%`;
+    params.push(like, like, like);
+  }
+  if (status === "not_provisioned") {
+    conditions.push("mycafe_cafe_id IS NULL");
+  } else if (status) {
+    conditions.push("mycafe_status = ?");
+    params.push(status);
+  }
 
   const result = await env.DB.prepare(
     `SELECT id, full_name, business_name, email, mycafe_cafe_id, mycafe_status, created_at
-     FROM clients WHERE product = 'mycafe_pos' ORDER BY created_at DESC LIMIT 200`,
-  ).all<{
-    id: string;
-    full_name: string;
-    business_name: string;
-    email: string;
-    mycafe_cafe_id: string | null;
-    mycafe_status: string | null;
-    created_at: string;
-  }>();
+     FROM clients WHERE ${conditions.join(" AND ")} ORDER BY created_at DESC LIMIT 200`,
+  )
+    .bind(...params)
+    .all<{
+      id: string;
+      full_name: string;
+      business_name: string;
+      email: string;
+      mycafe_cafe_id: string | null;
+      mycafe_status: string | null;
+      created_at: string;
+    }>();
 
   return jsonResponse(
     200,

@@ -26,3 +26,18 @@ export async function getStaffUser(db: D1Database, workosUserId: string): Promis
     .first<StaffUser>();
   return row ?? null;
 }
+
+// _middleware.ts's blanket check (a valid session + any role at all) is the
+// only gate most of this app's routes need. A few MyCafe actions are more
+// sensitive than the rest — they call out to a live third-party billing/
+// provisioning system or mint a credential that grants POS access — so
+// those routes call this on top of the middleware, restricted to owner/admin
+// rather than every staff role (sales/developer). Read-only MyCafe views
+// (the client list, dashboard, a single client's detail) are deliberately
+// NOT gated by this — only actions that provision, mint a device token, or
+// change licensing are.
+const MYCAFE_ADMIN_ROLES: StaffRole[] = ["owner", "admin"];
+
+export function isMyCafeAdmin(staffUser: StaffUser): boolean {
+  return MYCAFE_ADMIN_ROLES.includes(staffUser.role);
+}

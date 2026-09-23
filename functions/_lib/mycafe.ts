@@ -96,3 +96,86 @@ export async function mintMyCafeDevice(env: MyCafeEnv, mycafeCafeId: string): Pr
   }
   return body.deviceActivationToken;
 }
+
+async function adminGet<T>(env: MyCafeEnv, path: string): Promise<T> {
+  const response = await fetch(`${env.MYCAFE_CONTROL_PLANE_URL}${path}`, {
+    headers: { Authorization: `Bearer ${env.MYCAFE_ADMIN_API_TOKEN}` },
+  });
+  const body = await response.json().catch(() => null);
+  if (!response.ok) {
+    const message = (body as { error?: string } | null)?.error || `MyCafe request failed: ${response.status}`;
+    throw new MyCafeApiError(response.status, message);
+  }
+  return body as T;
+}
+
+export interface MyCafeEntitlement {
+  state: string;
+  tier: string | null;
+  trialEndsAt: string;
+  daysRemaining: number;
+  currentPeriodEndsAt: string | null;
+}
+
+export interface MyCafeAccountSummary {
+  id: string;
+  slug: string;
+  businessName: string;
+  storeName: string;
+  ownerEmail: string;
+  ownerName: string;
+  status: "provisioning" | "active" | "suspended";
+  createdAt: string;
+  activatedAt: string | null;
+  entitlement: MyCafeEntitlement | null;
+  branchLimit: number | null;
+  branchCount: number;
+  deviceCount: number;
+  activeDeviceCount: number;
+}
+
+// Every provisioned cafe, for the Overview Dashboard's counts. Read-only
+// admin data — never cached here, always a live call, since staff need an
+// accurate current count, not a snapshot.
+export function listMyCafeCafes(env: MyCafeEnv): Promise<MyCafeAccountSummary[]> {
+  return adminGet(env, `/admin/cafes`);
+}
+
+export interface MyCafeCafeDetail extends MyCafeAccountSummary {
+  tier: string | null;
+  billingCycle: string | null;
+  branches: { id: string; name: string; active: boolean; createdAt: string }[];
+}
+
+export function getMyCafeCafeDetail(env: MyCafeEnv, mycafeCafeId: string): Promise<MyCafeCafeDetail> {
+  return adminGet(env, `/admin/cafes/${mycafeCafeId}`);
+}
+
+export interface MyCafeDevice {
+  id: string;
+  deviceName: string;
+  branchId: string | null;
+  branchName: string | null;
+  active: boolean;
+  createdAt: string;
+  deactivatedAt: string | null;
+  lastUsedAt: string | null;
+}
+
+export function listMyCafeDevices(env: MyCafeEnv, mycafeCafeId: string): Promise<MyCafeDevice[]> {
+  return adminGet(env, `/admin/cafes/${mycafeCafeId}/devices`);
+}
+
+export async function revokeMyCafeDevice(env: MyCafeEnv, mycafeCafeId: string, deviceId: string): Promise<void> {
+  const response = await fetch(
+    `${env.MYCAFE_CONTROL_PLANE_URL}/admin/cafes/${mycafeCafeId}/devices/${deviceId}/revoke`,
+    {
+      method: "POST",
+      headers: { Authorization: `Bearer ${env.MYCAFE_ADMIN_API_TOKEN}` },
+    },
+  );
+  const body = (await response.json().catch(() => null)) as { error?: string } | null;
+  if (!response.ok) {
+    throw new MyCafeApiError(response.status, body?.error || `Revoking the device failed: ${response.status}`);
+  }
+}
