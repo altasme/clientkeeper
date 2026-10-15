@@ -684,3 +684,196 @@ export async function reconcileBillPayment(token: string): Promise<ReconcileBill
   if (!res.ok) throw new Error(data.error || "Couldn't check payment status.");
   return data;
 }
+
+// ---------------------------------------------------------------------------
+// Proposals & Questionnaires
+//
+// Public, client-facing viewing/signing/filling pages are served by the
+// marketing site (www.altasme.com/proposal/:slug, /questions/:slug),
+// reading the same shared D1 database directly -- the publicUrl each
+// endpoint below returns points there, not at anything in this app.
+
+export type ProposalStatus = "draft" | "published" | "sent" | "signed" | "declined" | "expired" | "revoked";
+
+export interface ProposalListRow {
+  id: string;
+  slug: string;
+  publicUrl: string;
+  title: string;
+  status: ProposalStatus;
+  currentVersion: number;
+  questionnaireId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export function fetchProposals(clientId: string): Promise<ProposalListRow[]> {
+  return apiFetch(`/api/app/clients/${clientId}/proposals`);
+}
+
+export function createProposal(clientId: string, title?: string): Promise<{ id: string; slug: string; title: string; status: ProposalStatus }> {
+  return apiFetch(`/api/app/clients/${clientId}/proposals`, { method: "POST", body: JSON.stringify({ title }) });
+}
+
+export interface ProposalVersion {
+  id: string;
+  versionNumber: number;
+  title: string;
+  contentHtml: string;
+  createdAt: string;
+}
+
+export interface ProposalSignature {
+  id: string;
+  versionId: string;
+  signerName: string;
+  signerTitle: string | null;
+  signatureDataUrl: string;
+  ipAddress: string | null;
+  signedAt: string;
+}
+
+export interface ProposalDetail {
+  id: string;
+  slug: string;
+  publicUrl: string;
+  title: string;
+  contentHtml: string;
+  status: ProposalStatus;
+  currentVersion: number;
+  questionnaireId: string | null;
+  expiresAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  versions: ProposalVersion[];
+  signature: ProposalSignature | null;
+}
+
+export function fetchProposalDetail(clientId: string, proposalId: string): Promise<ProposalDetail> {
+  return apiFetch(`/api/app/clients/${clientId}/proposals/${proposalId}`);
+}
+
+export function updateProposalDraft(
+  clientId: string,
+  proposalId: string,
+  fields: { title?: string; contentHtml?: string; questionnaireId?: string | null }
+): Promise<{ ok: true; updatedAt: string }> {
+  return apiFetch(`/api/app/clients/${clientId}/proposals/${proposalId}`, { method: "PATCH", body: JSON.stringify(fields) });
+}
+
+export function publishProposal(clientId: string, proposalId: string): Promise<{ status: ProposalStatus; versionNumber: number }> {
+  return apiFetch(`/api/app/clients/${clientId}/proposals/${proposalId}/publish`, { method: "POST" });
+}
+
+export function revokeProposal(clientId: string, proposalId: string): Promise<{ ok: true }> {
+  return apiFetch(`/api/app/clients/${clientId}/proposals/${proposalId}/revoke`, { method: "POST" });
+}
+
+export type QuestionnaireStatus = "draft" | "published" | "submitted" | "closed";
+export type QuestionFieldType = "short_text" | "long_text" | "single_choice" | "multi_choice" | "dropdown" | "yes_no" | "date" | "url" | "file";
+
+export interface QuestionnaireListRow {
+  id: string;
+  slug: string;
+  publicUrl: string;
+  title: string;
+  status: QuestionnaireStatus;
+  currentVersion: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export function fetchQuestionnaires(clientId: string): Promise<QuestionnaireListRow[]> {
+  return apiFetch(`/api/app/clients/${clientId}/questionnaires`);
+}
+
+export function createQuestionnaire(clientId: string, title?: string, description?: string): Promise<{ id: string; slug: string; title: string; status: QuestionnaireStatus }> {
+  return apiFetch(`/api/app/clients/${clientId}/questionnaires`, { method: "POST", body: JSON.stringify({ title, description }) });
+}
+
+export interface QuestionDraft {
+  id: string;
+  sectionHeading: string | null;
+  sectionDescription: string | null;
+  prompt: string;
+  helpText: string | null;
+  fieldType: QuestionFieldType;
+  isRequired: boolean;
+  options: string[];
+  sortOrder: number;
+}
+
+export interface QuestionnaireVersion {
+  id: string;
+  versionNumber: number;
+  title: string;
+  description: string | null;
+  createdAt: string;
+}
+
+export interface QuestionnaireDetail {
+  id: string;
+  slug: string;
+  publicUrl: string;
+  title: string;
+  description: string | null;
+  status: QuestionnaireStatus;
+  currentVersion: number;
+  createdAt: string;
+  updatedAt: string;
+  draftQuestions: QuestionDraft[];
+  versions: QuestionnaireVersion[];
+  responseCount: number;
+}
+
+export function fetchQuestionnaireDetail(clientId: string, questionnaireId: string): Promise<QuestionnaireDetail> {
+  return apiFetch(`/api/app/clients/${clientId}/questionnaires/${questionnaireId}`);
+}
+
+export function updateQuestionnaireDraft(clientId: string, questionnaireId: string, fields: { title?: string; description?: string | null }): Promise<{ ok: true; updatedAt: string }> {
+  return apiFetch(`/api/app/clients/${clientId}/questionnaires/${questionnaireId}`, { method: "PATCH", body: JSON.stringify(fields) });
+}
+
+export interface QuestionInput {
+  sectionHeading: string | null;
+  sectionDescription: string | null;
+  prompt: string;
+  helpText: string | null;
+  fieldType: QuestionFieldType;
+  isRequired: boolean;
+  options: string[];
+}
+
+export function saveQuestionnaireQuestions(clientId: string, questionnaireId: string, questions: QuestionInput[]): Promise<{ ok: true; count: number }> {
+  return apiFetch(`/api/app/clients/${clientId}/questionnaires/${questionnaireId}/questions`, { method: "PUT", body: JSON.stringify({ questions }) });
+}
+
+export function publishQuestionnaire(clientId: string, questionnaireId: string): Promise<{ status: QuestionnaireStatus; versionNumber: number }> {
+  return apiFetch(`/api/app/clients/${clientId}/questionnaires/${questionnaireId}/publish`, { method: "POST" });
+}
+
+export function revokeQuestionnaire(clientId: string, questionnaireId: string): Promise<{ ok: true }> {
+  return apiFetch(`/api/app/clients/${clientId}/questionnaires/${questionnaireId}/revoke`, { method: "POST" });
+}
+
+export interface QuestionnaireAnswer {
+  questionId: string;
+  prompt: string;
+  fieldType: QuestionFieldType;
+  valueText: string | null;
+  valueList: string[] | null;
+  fileUrl: string | null;
+  fileName: string | null;
+}
+
+export interface QuestionnaireResponse {
+  id: string;
+  submittedAt: string;
+  ipAddress: string | null;
+  userAgent: string | null;
+  answers: QuestionnaireAnswer[];
+}
+
+export function fetchQuestionnaireResponses(clientId: string, questionnaireId: string): Promise<QuestionnaireResponse[]> {
+  return apiFetch(`/api/app/clients/${clientId}/questionnaires/${questionnaireId}/responses`);
+}

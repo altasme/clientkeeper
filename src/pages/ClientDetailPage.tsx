@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   fetchClientDetail,
   addClientActivity,
@@ -17,9 +17,15 @@ import {
   sendWsaLink,
   sendDomainReminder,
   deleteClient,
+  fetchProposals,
+  createProposal,
+  fetchQuestionnaires,
+  createQuestionnaire,
   ApiError,
   type ClientDetail,
   type Stage,
+  type ProposalListRow,
+  type QuestionnaireListRow,
 } from "../lib/api";
 import { STAGE_LABELS, NEXT_FORWARD_STAGE, ALL_STAGES } from "../lib/stageLabels";
 
@@ -371,6 +377,14 @@ export default function ClientDetailPage() {
               ))}
             </ul>
           )}
+        </Card>
+
+        <Card title="Proposals">
+          <ProposalsBlock clientId={client.id} />
+        </Card>
+
+        <Card title="Questionnaires">
+          <QuestionnairesBlock clientId={client.id} />
         </Card>
 
         <Card title="Payments">
@@ -840,6 +854,102 @@ function NotesBlock({
         className="mt-2 rounded-full bg-brand-blue px-3 py-1 text-xs font-semibold text-white hover:bg-[#0b57cc] disabled:opacity-50"
       >
         Save
+      </button>
+    </div>
+  );
+}
+
+const PROPOSAL_STATUS_STYLES: Record<string, string> = {
+  draft: "bg-ink/10 text-ink/60",
+  published: "bg-blue-100 text-blue-700",
+  sent: "bg-blue-100 text-blue-700",
+  signed: "bg-green-100 text-green-700",
+  declined: "bg-red-100 text-red-700",
+  expired: "bg-ink/10 text-ink/60",
+  revoked: "bg-red-100 text-red-700",
+  submitted: "bg-green-100 text-green-700",
+  closed: "bg-red-100 text-red-700",
+};
+
+function ProposalsBlock({ clientId }: { clientId: string }) {
+  const navigate = useNavigate();
+  const [proposals, setProposals] = useState<ProposalListRow[]>([]);
+  const [creating, setCreating] = useState(false);
+
+  useEffect(() => {
+    fetchProposals(clientId).then(setProposals).catch(() => {});
+  }, [clientId]);
+
+  const handleCreate = async () => {
+    setCreating(true);
+    try {
+      const { id } = await createProposal(clientId);
+      navigate(`/clients/${clientId}/proposals/${id}`);
+    } catch {
+      setCreating(false);
+    }
+  };
+
+  return (
+    <div>
+      {proposals.length === 0 ? (
+        <p className="text-sm text-ink/40">No proposals yet.</p>
+      ) : (
+        <ul className="space-y-2">
+          {proposals.map((p) => (
+            <li key={p.id} className="flex items-center justify-between rounded-lg border border-ink/10 p-3 text-sm">
+              <Link to={`/clients/${clientId}/proposals/${p.id}`} className="font-medium text-brand-navy hover:underline">
+                {p.title}
+              </Link>
+              <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold uppercase tracking-wide ${PROPOSAL_STATUS_STYLES[p.status] ?? "bg-ink/10 text-ink/60"}`}>{p.status}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <button type="button" disabled={creating} onClick={handleCreate} className="mt-3 rounded-full border border-ink/15 px-4 py-1.5 text-xs font-semibold text-brand-navy hover:border-brand-blue hover:text-brand-blue disabled:opacity-50">
+        {creating ? "Creating..." : "+ New Proposal"}
+      </button>
+    </div>
+  );
+}
+
+function QuestionnairesBlock({ clientId }: { clientId: string }) {
+  const navigate = useNavigate();
+  const [questionnaires, setQuestionnaires] = useState<QuestionnaireListRow[]>([]);
+  const [creating, setCreating] = useState(false);
+
+  useEffect(() => {
+    fetchQuestionnaires(clientId).then(setQuestionnaires).catch(() => {});
+  }, [clientId]);
+
+  const handleCreate = async () => {
+    setCreating(true);
+    try {
+      const { id } = await createQuestionnaire(clientId);
+      navigate(`/clients/${clientId}/questionnaires/${id}`);
+    } catch {
+      setCreating(false);
+    }
+  };
+
+  return (
+    <div>
+      {questionnaires.length === 0 ? (
+        <p className="text-sm text-ink/40">No questionnaires yet.</p>
+      ) : (
+        <ul className="space-y-2">
+          {questionnaires.map((q) => (
+            <li key={q.id} className="flex items-center justify-between rounded-lg border border-ink/10 p-3 text-sm">
+              <Link to={`/clients/${clientId}/questionnaires/${q.id}`} className="font-medium text-brand-navy hover:underline">
+                {q.title}
+              </Link>
+              <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold uppercase tracking-wide ${PROPOSAL_STATUS_STYLES[q.status] ?? "bg-ink/10 text-ink/60"}`}>{q.status}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <button type="button" disabled={creating} onClick={handleCreate} className="mt-3 rounded-full border border-ink/15 px-4 py-1.5 text-xs font-semibold text-brand-navy hover:border-brand-blue hover:text-brand-blue disabled:opacity-50">
+        {creating ? "Creating..." : "+ New Questionnaire"}
       </button>
     </div>
   );

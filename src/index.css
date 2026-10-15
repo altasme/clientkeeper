@@ -17,3 +17,49 @@
     outline-offset: 2px;
   }
 }
+
+/* Proposal rich-text content styling (RichTextEditor.tsx's editable
+   area + the read-only preview/signed-view renderer) -- this repo has
+   no @tailwindcss/typography plugin, so this is a small, scoped,
+   hand-written substitute rather than pulling in a dependency for one
+   component. */
+.proposal-content h2 {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #02256f;
+  margin: 1rem 0 0.5rem;
+}
+.proposal-content h3 {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #02256f;
+  margin: 0.85rem 0 0.4rem;
+}
+.proposal-content p {
+  margin: 0.5rem 0;
+  line-height: 1.6;
+}
+.proposal-content ul {
+  list-style: disc;
+  padding-left: 1.5rem;
+  margin: 0.5rem 0;
+}
+.proposal-content ol {
+  list-style: decimal;
+  padding-left: 1.5rem;
+  margin: 0.5rem 0;
+}
+.proposal-content a {
+  color: #0d68ef;
+  text-decoration: underline;
+}
+.proposal-content table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 0.75rem 0;
+}
+.proposal-content table td,
+.proposal-content table th {
+  border: 1px solid #d8dce6;
+  padding: 0.4rem 0.6rem;
+}
