@@ -16,6 +16,8 @@ import PaymentsPage from "./pages/PaymentsPage";
 import SettingsPage from "./pages/SettingsPage";
 import MyCafePage from "./pages/MyCafePage";
 import MyCafeClientDetailPage from "./pages/MyCafeClientDetailPage";
+import ProposalEditorPage from "./pages/ProposalEditorPage";
+import QuestionnaireEditorPage from "./pages/QuestionnaireEditorPage";
 
 function App() {
   return (
@@ -26,6 +28,8 @@ function App() {
           <Route path="/leads" element={<LeadsPage />} />
           <Route path="/clients" element={<ClientsPage />} />
           <Route path="/clients/:id" element={<ClientDetailPage />} />
+          <Route path="/clients/:clientId/proposals/:proposalId" element={<ProposalEditorPage />} />
+          <Route path="/clients/:clientId/questionnaires/:questionnaireId" element={<QuestionnaireEditorPage />} />
           <Route path="/projects" element={<ProjectsPage />} />
           <Route path="/discovery" element={<DiscoveryPage />} />
           <Route path="/presentations" element={<PresentationsPage />} />
