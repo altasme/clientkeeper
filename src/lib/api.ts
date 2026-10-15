@@ -380,6 +380,30 @@ export function setClientDates(
   return apiFetch(`/api/app/clients/${id}/set-dates`, { method: "POST", body: JSON.stringify(fields) });
 }
 
+export interface ClientDetailsFields {
+  fullName?: string;
+  businessName?: string;
+  email?: string;
+  mobile?: string | null;
+  facebook?: string | null;
+  currentWebsite?: string | null;
+}
+
+export function setClientDetails(
+  id: string,
+  fields: ClientDetailsFields
+): Promise<{
+  ok: true;
+  fullName: string;
+  businessName: string;
+  email: string;
+  mobile: string | null;
+  facebook: string | null;
+  currentWebsite: string | null;
+}> {
+  return apiFetch(`/api/app/clients/${id}/set-details`, { method: "POST", body: JSON.stringify(fields) });
+}
+
 export function sendWsaLink(id: string): Promise<{ ok: true }> {
   return apiFetch(`/api/app/clients/${id}/send-wsa`, { method: "POST" });
 }

@@ -14,6 +14,7 @@ import {
   setClientPlan,
   setProjectWebsite,
   setClientDates,
+  setClientDetails,
   sendWsaLink,
   sendDomainReminder,
   deleteClient,
@@ -95,6 +96,15 @@ export default function ClientDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [editingIdentity, setEditingIdentity] = useState(false);
+  const [identityForm, setIdentityForm] = useState({
+    fullName: "",
+    businessName: "",
+    email: "",
+    mobile: "",
+    facebook: "",
+    currentWebsite: "",
+  });
 
   const load = useCallback(() => {
     if (!id) return;
@@ -115,6 +125,44 @@ export default function ClientDetailPage() {
     setError(null);
     try {
       await action();
+      load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Something went wrong.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const startEditIdentity = (client: ClientDetail["client"]) => {
+    setIdentityForm({
+      fullName: client.full_name,
+      businessName: client.business_name,
+      email: client.email,
+      mobile: client.mobile ?? "",
+      facebook: client.facebook ?? "",
+      currentWebsite: client.current_website ?? "",
+    });
+    setEditingIdentity(true);
+  };
+
+  // Not routed through run() -- on failure (e.g. a duplicate-email 409)
+  // the edit form must stay open with the staff member's typed values
+  // intact, rather than closing and discarding them the way run()'s
+  // always-reload-regardless pattern would.
+  const saveIdentity = async () => {
+    if (!id) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await setClientDetails(id, {
+        fullName: identityForm.fullName,
+        businessName: identityForm.businessName,
+        email: identityForm.email,
+        mobile: identityForm.mobile,
+        facebook: identityForm.facebook,
+        currentWebsite: identityForm.currentWebsite,
+      });
+      setEditingIdentity(false);
       load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Something went wrong.");
@@ -167,13 +215,101 @@ export default function ClientDetailPage() {
 
       <div className="mt-6 grid grid-cols-1 gap-5 lg:grid-cols-2">
         <Card title="Identity">
-          <dl className="space-y-1.5 text-sm">
-            <div className="flex justify-between"><dt className="text-ink/50">Email</dt><dd>{client.email}</dd></div>
-            <div className="flex justify-between"><dt className="text-ink/50">Mobile</dt><dd>{client.mobile || "—"}</dd></div>
-            <div className="flex justify-between"><dt className="text-ink/50">Facebook</dt><dd>{client.facebook || "—"}</dd></div>
-            <div className="flex justify-between"><dt className="text-ink/50">Existing site</dt><dd>{client.current_website || "—"}</dd></div>
-            <div className="flex justify-between"><dt className="text-ink/50">Client since</dt><dd>{new Date(client.created_at).toLocaleDateString()}</dd></div>
-          </dl>
+          {editingIdentity ? (
+            <div className="space-y-2.5 text-sm">
+              <label className="block">
+                <span className="text-xs text-ink/50">Client name</span>
+                <input
+                  type="text"
+                  value={identityForm.fullName}
+                  onChange={(e) => setIdentityForm((f) => ({ ...f, fullName: e.target.value }))}
+                  className="mt-0.5 w-full rounded-lg border border-ink/15 px-2.5 py-1.5"
+                />
+              </label>
+              <label className="block">
+                <span className="text-xs text-ink/50">Business name</span>
+                <input
+                  type="text"
+                  value={identityForm.businessName}
+                  onChange={(e) => setIdentityForm((f) => ({ ...f, businessName: e.target.value }))}
+                  className="mt-0.5 w-full rounded-lg border border-ink/15 px-2.5 py-1.5"
+                />
+              </label>
+              <label className="block">
+                <span className="text-xs text-ink/50">Email</span>
+                <input
+                  type="email"
+                  value={identityForm.email}
+                  onChange={(e) => setIdentityForm((f) => ({ ...f, email: e.target.value }))}
+                  className="mt-0.5 w-full rounded-lg border border-ink/15 px-2.5 py-1.5"
+                />
+              </label>
+              <label className="block">
+                <span className="text-xs text-ink/50">Mobile</span>
+                <input
+                  type="text"
+                  value={identityForm.mobile}
+                  onChange={(e) => setIdentityForm((f) => ({ ...f, mobile: e.target.value }))}
+                  className="mt-0.5 w-full rounded-lg border border-ink/15 px-2.5 py-1.5"
+                />
+              </label>
+              <label className="block">
+                <span className="text-xs text-ink/50">Facebook</span>
+                <input
+                  type="text"
+                  value={identityForm.facebook}
+                  onChange={(e) => setIdentityForm((f) => ({ ...f, facebook: e.target.value }))}
+                  className="mt-0.5 w-full rounded-lg border border-ink/15 px-2.5 py-1.5"
+                />
+              </label>
+              <label className="block">
+                <span className="text-xs text-ink/50">Existing site</span>
+                <input
+                  type="text"
+                  value={identityForm.currentWebsite}
+                  onChange={(e) => setIdentityForm((f) => ({ ...f, currentWebsite: e.target.value }))}
+                  className="mt-0.5 w-full rounded-lg border border-ink/15 px-2.5 py-1.5"
+                />
+              </label>
+              <div className="flex gap-2 pt-1">
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={saveIdentity}
+                  className="rounded-full bg-brand-blue px-4 py-1.5 text-xs font-semibold text-white hover:bg-brand-navy disabled:opacity-50"
+                >
+                  {busy ? "Saving..." : "Save"}
+                </button>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => setEditingIdentity(false)}
+                  className="rounded-full border border-ink/15 px-4 py-1.5 text-xs font-semibold text-ink/60 hover:bg-ink/5"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <dl className="space-y-1.5 text-sm">
+                <div className="flex justify-between"><dt className="text-ink/50">Client name</dt><dd>{client.full_name}</dd></div>
+                <div className="flex justify-between"><dt className="text-ink/50">Business name</dt><dd>{client.business_name}</dd></div>
+                <div className="flex justify-between"><dt className="text-ink/50">Email</dt><dd>{client.email}</dd></div>
+                <div className="flex justify-between"><dt className="text-ink/50">Mobile</dt><dd>{client.mobile || "—"}</dd></div>
+                <div className="flex justify-between"><dt className="text-ink/50">Facebook</dt><dd>{client.facebook || "—"}</dd></div>
+                <div className="flex justify-between"><dt className="text-ink/50">Existing site</dt><dd>{client.current_website || "—"}</dd></div>
+                <div className="flex justify-between"><dt className="text-ink/50">Client since</dt><dd>{new Date(client.created_at).toLocaleDateString()}</dd></div>
+              </dl>
+              <button
+                type="button"
+                onClick={() => startEditIdentity(client)}
+                className="mt-3 rounded-full border border-ink/15 px-4 py-1.5 text-xs font-semibold text-brand-navy hover:border-brand-blue hover:text-brand-blue"
+              >
+                Edit Details
+              </button>
+            </>
+          )}
           <div className="mt-3 flex flex-wrap gap-2">
             {client.invitation_status !== "accepted" && (
               <button
