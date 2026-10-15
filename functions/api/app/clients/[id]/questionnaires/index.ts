@@ -68,7 +68,6 @@ export const onRequestPost: PagesFunction<Env, "id", { staffUser: StaffUser }> =
   }
   const b = body as Record<string, unknown>;
   const title = typeof b.title === "string" && b.title.trim() ? b.title.trim() : `Questionnaire for ${client.business_name}`;
-  const description = typeof b.description === "string" && b.description.trim() ? b.description.trim() : null;
 
   const { slug, accessToken } = await generateUniqueSlugAndToken(db, "questionnaires", client.business_name);
 
@@ -77,10 +76,10 @@ export const onRequestPost: PagesFunction<Env, "id", { staffUser: StaffUser }> =
 
   await db
     .prepare(
-      `INSERT INTO questionnaires (id, client_id, slug, access_token, title, description, status, current_version, created_by, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, 'draft', 0, ?, ?, ?)`
+      `INSERT INTO questionnaires (id, client_id, slug, access_token, title, content_html, status, current_version, created_by, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, '', 'draft', 0, ?, ?, ?)`
     )
-    .bind(id, clientId, slug, accessToken, title, description, data.staffUser.id, now, now)
+    .bind(id, clientId, slug, accessToken, title, data.staffUser.id, now, now)
     .run();
 
   await db

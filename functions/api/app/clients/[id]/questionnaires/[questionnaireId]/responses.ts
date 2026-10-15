@@ -1,9 +1,9 @@
 // Cloudflare Pages Function: GET /api/app/clients/:id/questionnaires/:questionnaireId/responses
 //
-// Full submitted responses for staff review/download, each resolved
-// against the exact question set (version) it was answered against --
-// never the current draft, so an edited questionnaire never misaligns a
-// past response's answers with the wrong questions.
+// Submitted responses for staff review -- each is just the client's one
+// free-text answer now (CLAUDE.md's 2026-10-15 redesign collapsed the
+// old per-question answer list into questionnaire_responses.answer_text
+// directly), so this no longer needs to resolve against a question set.
 
 interface Env {
   DB?: D1Database;
@@ -27,43 +27,18 @@ export const onRequestGet: PagesFunction<Env, "id" | "questionnaireId"> = async 
   if (!questionnaire) return jsonResponse(404, { error: "Questionnaire not found" });
 
   const responses = await db
-    .prepare(`SELECT id, version_id, ip_address, user_agent, submitted_at FROM questionnaire_responses WHERE questionnaire_id = ? ORDER BY submitted_at DESC`)
+    .prepare(`SELECT id, answer_text, ip_address, user_agent, submitted_at FROM questionnaire_responses WHERE questionnaire_id = ? ORDER BY submitted_at DESC`)
     .bind(questionnaireId)
-    .all<{ id: string; version_id: string; ip_address: string | null; user_agent: string | null; submitted_at: string }>();
+    .all<{ id: string; answer_text: string; ip_address: string | null; user_agent: string | null; submitted_at: string }>();
 
-  const out = [];
-  for (const response of responses.results) {
-    const questions = await db
-      .prepare(`SELECT id, prompt, field_type, sort_order FROM questionnaire_questions WHERE version_id = ? ORDER BY sort_order ASC`)
-      .bind(response.version_id)
-      .all<{ id: string; prompt: string; field_type: string; sort_order: number }>();
-
-    const answers = await db
-      .prepare(`SELECT question_id, value_text, value_json, file_url, file_name FROM questionnaire_answers WHERE response_id = ?`)
-      .bind(response.id)
-      .all<{ question_id: string; value_text: string | null; value_json: string | null; file_url: string | null; file_name: string | null }>();
-
-    const answersByQuestion = new Map(answers.results.map((a) => [a.question_id, a]));
-
-    out.push({
-      id: response.id,
-      submittedAt: response.submitted_at,
-      ipAddress: response.ip_address,
-      userAgent: response.user_agent,
-      answers: questions.results.map((q) => {
-        const a = answersByQuestion.get(q.id);
-        return {
-          questionId: q.id,
-          prompt: q.prompt,
-          fieldType: q.field_type,
-          valueText: a?.value_text ?? null,
-          valueList: a?.value_json ? (JSON.parse(a.value_json) as string[]) : null,
-          fileUrl: a?.file_url ?? null,
-          fileName: a?.file_name ?? null,
-        };
-      }),
-    });
-  }
-
-  return jsonResponse(200, out);
+  return jsonResponse(
+    200,
+    responses.results.map((r) => ({
+      id: r.id,
+      answerText: r.answer_text,
+      submittedAt: r.submitted_at,
+      ipAddress: r.ip_address,
+      userAgent: r.user_agent,
+    }))
+  );
 };

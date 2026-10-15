@@ -1,11 +1,12 @@
 // Cloudflare Pages Function: POST /api/app/clients/:id/questionnaires/:questionnaireId/publish
 //
-// Snapshots the current draft (title/description + every draft question
-// row) into a new immutable questionnaire_versions + frozen
-// questionnaire_questions copies, and flips status to 'published' (or
-// leaves it 'submitted'/'closed' alone if a response already exists --
-// republishing just makes a newer version available for the NEXT
-// response, it doesn't revive a closed link).
+// Snapshots the current draft buffer (title/content_html) into a new
+// immutable questionnaire_versions row and flips status to 'published'
+// (or leaves it 'submitted'/'closed' alone -- republishing just makes a
+// newer version available for the NEXT response, it doesn't revive a
+// closed link or un-submit an already-submitted one). Mirrors proposals'
+// own publish.ts exactly, since questionnaires are now the same
+// free-text-content model (CLAUDE.md's 2026-10-15 redesign).
 
 import type { StaffUser } from "../../../../../../_lib/roles";
 
@@ -28,52 +29,26 @@ export const onRequestPost: PagesFunction<Env, "id" | "questionnaireId", { staff
   const questionnaireId = normalizeParam(params.questionnaireId);
 
   const questionnaire = await db
-    .prepare(`SELECT id, title, description, status, current_version FROM questionnaires WHERE id = ? AND client_id = ?`)
+    .prepare(`SELECT id, title, content_html, status, current_version FROM questionnaires WHERE id = ? AND client_id = ?`)
     .bind(questionnaireId, clientId)
-    .first<{ id: string; title: string; description: string | null; status: string; current_version: number }>();
+    .first<{ id: string; title: string; content_html: string; status: string; current_version: number }>();
   if (!questionnaire) return jsonResponse(404, { error: "Questionnaire not found" });
   if (questionnaire.status === "closed") return jsonResponse(409, { error: "This questionnaire's link has been closed/revoked." });
-
-  const draftQuestions = await db
-    .prepare(
-      `SELECT id, section_heading, section_description, prompt, help_text, field_type, is_required, options_json, sort_order
-       FROM questionnaire_questions WHERE questionnaire_id = ? AND version_id IS NULL ORDER BY sort_order ASC`
-    )
-    .bind(questionnaireId)
-    .all<{
-      id: string;
-      section_heading: string | null;
-      section_description: string | null;
-      prompt: string;
-      help_text: string | null;
-      field_type: string;
-      is_required: number;
-      options_json: string | null;
-      sort_order: number;
-    }>();
-  if (draftQuestions.results.length === 0) return jsonResponse(400, { error: "Add at least one question before publishing." });
+  if (!questionnaire.content_html.trim()) return jsonResponse(400, { error: "Write the questionnaire content before publishing." });
 
   const now = new Date().toISOString();
   const versionNumber = questionnaire.current_version + 1;
   const versionId = crypto.randomUUID();
 
-  const statements = [
-    db
-      .prepare(`INSERT INTO questionnaire_versions (id, questionnaire_id, version_number, title, description, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`)
-      .bind(versionId, questionnaireId, versionNumber, questionnaire.title, questionnaire.description, data.staffUser.id, now),
-    ...draftQuestions.results.map((q) =>
-      db
-        .prepare(
-          `INSERT INTO questionnaire_questions (id, questionnaire_id, version_id, section_heading, section_description, prompt, help_text, field_type, is_required, options_json, sort_order, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-        )
-        .bind(crypto.randomUUID(), questionnaireId, versionId, q.section_heading, q.section_description, q.prompt, q.help_text, q.field_type, q.is_required, q.options_json, q.sort_order, now)
-    ),
-    db
-      .prepare(`UPDATE questionnaires SET status = CASE WHEN status = 'draft' THEN 'published' ELSE status END, current_version = ?, updated_at = ? WHERE id = ?`)
-      .bind(versionNumber, now, questionnaireId),
-  ];
-  await db.batch(statements);
+  await db
+    .prepare(`INSERT INTO questionnaire_versions (id, questionnaire_id, version_number, title, content_html, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`)
+    .bind(versionId, questionnaireId, versionNumber, questionnaire.title, questionnaire.content_html, data.staffUser.id, now)
+    .run();
+
+  await db
+    .prepare(`UPDATE questionnaires SET status = CASE WHEN status = 'draft' THEN 'published' ELSE status END, current_version = ?, updated_at = ? WHERE id = ?`)
+    .bind(versionNumber, now, questionnaireId)
+    .run();
 
   await db
     .prepare(`INSERT INTO client_activity (id, client_id, type, description, actor_id, created_at) VALUES (?, ?, 'questionnaire_published', ?, ?, ?)`)

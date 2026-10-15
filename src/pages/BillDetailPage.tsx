@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { fetchBillDetail, cancelBill, reconcileBillPayment, type BillDetail, type BillStatus } from "../lib/api";
+import { fetchBillDetail, cancelBill, markBillPaid, reconcileBillPayment, type BillDetail, type BillStatus } from "../lib/api";
+import { generateBillPdf, downloadBillPdf } from "../lib/billPdf";
 
 const STATUS_STYLES: Record<BillStatus, string> = {
   pending: "bg-amber-100 text-amber-700",
@@ -32,6 +33,11 @@ export default function BillDetailPage() {
   const [cancelling, setCancelling] = useState(false);
   const [checkingStatus, setCheckingStatus] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
+  const [markingPaid, setMarkingPaid] = useState(false);
+  const [showMarkPaidForm, setShowMarkPaidForm] = useState(false);
+  const [markPaidReference, setMarkPaidReference] = useState("");
+  const [markPaidNote, setMarkPaidNote] = useState("");
 
   const load = () => {
     if (!id) return;
@@ -78,6 +84,37 @@ export default function BillDetailPage() {
       setError(err instanceof Error ? err.message : "Something went wrong.");
     } finally {
       setCancelling(false);
+    }
+  };
+
+  const handleDownloadPdf = async () => {
+    if (!bill) return;
+    setDownloadingPdf(true);
+    setError(null);
+    try {
+      const bytes = await generateBillPdf(bill);
+      downloadBillPdf(bytes, bill.billNumber);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't generate the PDF.");
+    } finally {
+      setDownloadingPdf(false);
+    }
+  };
+
+  const handleMarkPaid = async () => {
+    if (!id) return;
+    setMarkingPaid(true);
+    setError(null);
+    try {
+      await markBillPaid(id, { reference: markPaidReference.trim() || undefined, note: markPaidNote.trim() || undefined });
+      setShowMarkPaidForm(false);
+      setMarkPaidReference("");
+      setMarkPaidNote("");
+      load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't mark this bill paid.");
+    } finally {
+      setMarkingPaid(false);
     }
   };
 
@@ -129,6 +166,14 @@ export default function BillDetailPage() {
                 {checkingStatus ? "Checking…" : "Check Payment Status"}
               </button>
             )}
+            <button
+              type="button"
+              disabled={downloadingPdf}
+              onClick={handleDownloadPdf}
+              className="rounded-full border border-ink/15 px-4 py-1.5 text-xs font-semibold text-brand-navy transition hover:border-brand-blue hover:text-brand-blue disabled:opacity-50"
+            >
+              {downloadingPdf ? "Generating…" : "Download PDF"}
+            </button>
           </div>
           {statusMessage && <p className="mt-2 text-xs text-ink/60">{statusMessage}</p>}
         </Card>
@@ -175,8 +220,49 @@ export default function BillDetailPage() {
         </div>
       </div>
 
-      {bill.status === "pending" && (
+      {(bill.status === "pending" || bill.status === "expired") && (
         <div className="mt-5">
+          {!showMarkPaidForm ? (
+            <button type="button" onClick={() => setShowMarkPaidForm(true)} className="rounded-full bg-green-600 px-4 py-1.5 text-xs font-semibold text-white hover:bg-green-700">
+              Mark as Paid
+            </button>
+          ) : (
+            <div className="rounded-lg border border-green-200 bg-green-50 p-3">
+              <p className="text-sm text-green-800">Confirm this bill has been paid (e.g. a GCash transfer you've verified).</p>
+              <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                <input
+                  value={markPaidReference}
+                  onChange={(e) => setMarkPaidReference(e.target.value)}
+                  placeholder="GCash reference number (optional)"
+                  className="rounded-lg border border-ink/15 px-3 py-1.5 text-xs"
+                />
+                <input
+                  value={markPaidNote}
+                  onChange={(e) => setMarkPaidNote(e.target.value)}
+                  placeholder="Note (optional)"
+                  className="rounded-lg border border-ink/15 px-3 py-1.5 text-xs"
+                />
+              </div>
+              <div className="mt-2 flex gap-2">
+                <button
+                  type="button"
+                  disabled={markingPaid}
+                  onClick={handleMarkPaid}
+                  className="rounded-full bg-green-600 px-3 py-1 text-xs font-semibold text-white hover:bg-green-700 disabled:opacity-50"
+                >
+                  {markingPaid ? "Saving..." : "Confirm Paid"}
+                </button>
+                <button type="button" onClick={() => setShowMarkPaidForm(false)} className="text-xs text-ink/50 hover:text-ink">
+                  Never mind
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {bill.status === "pending" && (
+        <div className="mt-3">
           {!confirmingCancel ? (
             <button type="button" onClick={() => setConfirmingCancel(true)} className="text-xs font-semibold text-red-600 hover:underline">
               Cancel this bill

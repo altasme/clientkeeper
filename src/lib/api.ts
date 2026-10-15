@@ -684,6 +684,10 @@ export function cancelBill(id: string): Promise<{ ok: true }> {
   return apiFetch(`/api/app/bills/${id}/cancel`, { method: "POST" });
 }
 
+export function markBillPaid(id: string, fields: { reference?: string; note?: string } = {}): Promise<{ ok: true; paidAt: string }> {
+  return apiFetch(`/api/app/bills/${id}/mark-paid`, { method: "POST", body: JSON.stringify(fields) });
+}
+
 export interface ReconcileBillResult {
   reconciled: boolean;
   billStatus: string;
@@ -794,7 +798,6 @@ export function revokeProposal(clientId: string, proposalId: string): Promise<{ 
 }
 
 export type QuestionnaireStatus = "draft" | "published" | "submitted" | "closed";
-export type QuestionFieldType = "short_text" | "long_text" | "single_choice" | "multi_choice" | "dropdown" | "yes_no" | "date" | "url" | "file";
 
 export interface QuestionnaireListRow {
   id: string;
@@ -811,27 +814,15 @@ export function fetchQuestionnaires(clientId: string): Promise<QuestionnaireList
   return apiFetch(`/api/app/clients/${clientId}/questionnaires`);
 }
 
-export function createQuestionnaire(clientId: string, title?: string, description?: string): Promise<{ id: string; slug: string; title: string; status: QuestionnaireStatus }> {
-  return apiFetch(`/api/app/clients/${clientId}/questionnaires`, { method: "POST", body: JSON.stringify({ title, description }) });
-}
-
-export interface QuestionDraft {
-  id: string;
-  sectionHeading: string | null;
-  sectionDescription: string | null;
-  prompt: string;
-  helpText: string | null;
-  fieldType: QuestionFieldType;
-  isRequired: boolean;
-  options: string[];
-  sortOrder: number;
+export function createQuestionnaire(clientId: string, title?: string): Promise<{ id: string; slug: string; title: string; status: QuestionnaireStatus }> {
+  return apiFetch(`/api/app/clients/${clientId}/questionnaires`, { method: "POST", body: JSON.stringify({ title }) });
 }
 
 export interface QuestionnaireVersion {
   id: string;
   versionNumber: number;
   title: string;
-  description: string | null;
+  contentHtml: string;
   createdAt: string;
 }
 
@@ -840,12 +831,11 @@ export interface QuestionnaireDetail {
   slug: string;
   publicUrl: string;
   title: string;
-  description: string | null;
+  contentHtml: string;
   status: QuestionnaireStatus;
   currentVersion: number;
   createdAt: string;
   updatedAt: string;
-  draftQuestions: QuestionDraft[];
   versions: QuestionnaireVersion[];
   responseCount: number;
 }
@@ -854,22 +844,8 @@ export function fetchQuestionnaireDetail(clientId: string, questionnaireId: stri
   return apiFetch(`/api/app/clients/${clientId}/questionnaires/${questionnaireId}`);
 }
 
-export function updateQuestionnaireDraft(clientId: string, questionnaireId: string, fields: { title?: string; description?: string | null }): Promise<{ ok: true; updatedAt: string }> {
+export function updateQuestionnaireDraft(clientId: string, questionnaireId: string, fields: { title?: string; contentHtml?: string }): Promise<{ ok: true; updatedAt: string }> {
   return apiFetch(`/api/app/clients/${clientId}/questionnaires/${questionnaireId}`, { method: "PATCH", body: JSON.stringify(fields) });
-}
-
-export interface QuestionInput {
-  sectionHeading: string | null;
-  sectionDescription: string | null;
-  prompt: string;
-  helpText: string | null;
-  fieldType: QuestionFieldType;
-  isRequired: boolean;
-  options: string[];
-}
-
-export function saveQuestionnaireQuestions(clientId: string, questionnaireId: string, questions: QuestionInput[]): Promise<{ ok: true; count: number }> {
-  return apiFetch(`/api/app/clients/${clientId}/questionnaires/${questionnaireId}/questions`, { method: "PUT", body: JSON.stringify({ questions }) });
 }
 
 export function publishQuestionnaire(clientId: string, questionnaireId: string): Promise<{ status: QuestionnaireStatus; versionNumber: number }> {
@@ -880,22 +856,12 @@ export function revokeQuestionnaire(clientId: string, questionnaireId: string): 
   return apiFetch(`/api/app/clients/${clientId}/questionnaires/${questionnaireId}/revoke`, { method: "POST" });
 }
 
-export interface QuestionnaireAnswer {
-  questionId: string;
-  prompt: string;
-  fieldType: QuestionFieldType;
-  valueText: string | null;
-  valueList: string[] | null;
-  fileUrl: string | null;
-  fileName: string | null;
-}
-
 export interface QuestionnaireResponse {
   id: string;
+  answerText: string;
   submittedAt: string;
   ipAddress: string | null;
   userAgent: string | null;
-  answers: QuestionnaireAnswer[];
 }
 
 export function fetchQuestionnaireResponses(clientId: string, questionnaireId: string): Promise<QuestionnaireResponse[]> {
