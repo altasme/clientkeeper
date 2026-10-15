@@ -32,7 +32,13 @@ function Card({ title, children }: { title: string; children: React.ReactNode })
 }
 
 export default function ProposalEditorPage() {
-  const { clientId, proposalId } = useParams<{ clientId: string; proposalId: string }>();
+  // [2026-10-15] Flat route (/proposals/:proposalId) -- a proposal can
+  // now belong to a client or a lead (CLAUDE.md §25), so there's no
+  // single parent id to carry in the URL anymore. Which parent it has
+  // (proposal.clientId / proposal.leadId) comes back from the detail
+  // fetch itself and drives the "back to..." link and the
+  // questionnaire-link card below.
+  const { proposalId } = useParams<{ proposalId: string }>();
   const [proposal, setProposal] = useState<ProposalDetail | null>(null);
   const [questionnaires, setQuestionnaires] = useState<QuestionnaireListRow[]>([]);
   const [title, setTitle] = useState("");
@@ -46,19 +52,22 @@ export default function ProposalEditorPage() {
   const [preview, setPreview] = useState(false);
 
   const load = () => {
-    if (!clientId || !proposalId) return;
-    fetchProposalDetail(clientId, proposalId)
+    if (!proposalId) return;
+    fetchProposalDetail(proposalId)
       .then((p) => {
         setProposal(p);
         setTitle(p.title);
         setContentHtml(p.contentHtml);
         setQuestionnaireId(p.questionnaireId ?? "");
+        // Questionnaires are always client-scoped (schema.sql's
+        // questionnaires.client_id stays NOT NULL) -- a lead-backed
+        // proposal has nothing valid to list here.
+        if (p.clientId) fetchQuestionnaires(p.clientId).then(setQuestionnaires).catch(() => {});
       })
       .catch((err) => setError(err.message));
-    fetchQuestionnaires(clientId).then(setQuestionnaires).catch(() => {});
   };
 
-  useEffect(load, [clientId, proposalId]);
+  useEffect(load, [proposalId]);
 
   // Editing is always allowed, even once signed -- publishing a revision
   // of a signed proposal resets status to "published" and preserves the
@@ -67,11 +76,11 @@ export default function ProposalEditorPage() {
   const signed = proposal?.status === "signed";
 
   const handleSave = async () => {
-    if (!clientId || !proposalId) return;
+    if (!proposalId) return;
     setSaving(true);
     setError(null);
     try {
-      await updateProposalDraft(clientId, proposalId, { title, contentHtml, questionnaireId: questionnaireId || null });
+      await updateProposalDraft(proposalId, { title, contentHtml, questionnaireId: questionnaireId || null });
       load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't save the draft.");
@@ -81,12 +90,12 @@ export default function ProposalEditorPage() {
   };
 
   const handlePublish = async () => {
-    if (!clientId || !proposalId) return;
+    if (!proposalId) return;
     setPublishing(true);
     setError(null);
     try {
       await handleSave();
-      await publishProposal(clientId, proposalId);
+      await publishProposal(proposalId);
       load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't publish.");
@@ -96,9 +105,9 @@ export default function ProposalEditorPage() {
   };
 
   const handleRevoke = async () => {
-    if (!clientId || !proposalId) return;
+    if (!proposalId) return;
     try {
-      await revokeProposal(clientId, proposalId);
+      await revokeProposal(proposalId);
       setConfirmingRevoke(false);
       load();
     } catch (err) {
@@ -169,9 +178,15 @@ export default function ProposalEditorPage() {
 
   return (
     <div className="max-w-3xl">
-      <Link to={`/clients/${clientId}`} className="text-xs font-semibold text-ink/50 hover:text-ink">
-        &larr; Back to client
-      </Link>
+      {proposal.clientId ? (
+        <Link to={`/clients/${proposal.clientId}`} className="text-xs font-semibold text-ink/50 hover:text-ink">
+          &larr; Back to client
+        </Link>
+      ) : proposal.leadId ? (
+        <Link to={`/leads/${proposal.leadId}`} className="text-xs font-semibold text-ink/50 hover:text-ink">
+          &larr; Back to lead
+        </Link>
+      ) : null}
 
       <div className="mt-2 flex items-start justify-between gap-3">
         <input
@@ -240,23 +255,33 @@ export default function ProposalEditorPage() {
           </Card>
         )}
 
-        <Card title="Send to Questionnaire After Signing">
-          <select
-            value={questionnaireId}
-            onChange={(e) => setQuestionnaireId(e.target.value)}
-            className="w-full rounded-lg border border-ink/15 bg-white px-3 py-2 text-sm"
-          >
-            <option value="">No questionnaire linked yet</option>
-            {questionnaires.map((q) => (
-              <option key={q.id} value={q.id}>
-                {q.title} ({q.status})
-              </option>
-            ))}
-          </select>
-          <p className="mt-2 text-xs text-ink/50">
-            Once this client has a published questionnaire, link it here so a client who signs this proposal is redirected straight to it.
-          </p>
-        </Card>
+        {proposal.clientId ? (
+          <Card title="Send to Questionnaire After Signing">
+            <select
+              value={questionnaireId}
+              onChange={(e) => setQuestionnaireId(e.target.value)}
+              className="w-full rounded-lg border border-ink/15 bg-white px-3 py-2 text-sm"
+            >
+              <option value="">No questionnaire linked yet</option>
+              {questionnaires.map((q) => (
+                <option key={q.id} value={q.id}>
+                  {q.title} ({q.status})
+                </option>
+              ))}
+            </select>
+            <p className="mt-2 text-xs text-ink/50">
+              Once this client has a published questionnaire, link it here so a client who signs this proposal is redirected straight to it.
+            </p>
+          </Card>
+        ) : (
+          // A lead-backed proposal has no client yet, and every
+          // questionnaire belongs to a client (CLAUDE.md §25) -- there
+          // is nothing valid to link here until this prospect becomes a
+          // real client.
+          <Card title="Send to Questionnaire After Signing">
+            <p className="text-xs text-ink/50">This proposal isn't attached to a client yet, so it can't be linked to a questionnaire. Convert this lead to a client first if you need that.</p>
+          </Card>
+        )}
 
         <Card title="Proposal Content">
           <div className="flex items-center justify-end gap-2 pb-2">

@@ -3,6 +3,7 @@ import { MeProvider } from "./lib/MeContext";
 import Layout from "./components/Layout";
 import DashboardPage from "./pages/DashboardPage";
 import LeadsPage from "./pages/LeadsPage";
+import LeadDetailPage from "./pages/LeadDetailPage";
 import ClientsPage from "./pages/ClientsPage";
 import ClientDetailPage from "./pages/ClientDetailPage";
 import ProjectsPage from "./pages/ProjectsPage";
@@ -26,9 +27,11 @@ function App() {
         <Route element={<Layout />}>
           <Route path="/" element={<DashboardPage />} />
           <Route path="/leads" element={<LeadsPage />} />
+          <Route path="/leads/:id" element={<LeadDetailPage />} />
           <Route path="/clients" element={<ClientsPage />} />
           <Route path="/clients/:id" element={<ClientDetailPage />} />
-          <Route path="/clients/:clientId/proposals/:proposalId" element={<ProposalEditorPage />} />
+          {/* [2026-10-15] Flat -- a proposal can belong to a client or a lead now (CLAUDE.md §25), so it's no longer nested under one parent's path. */}
+          <Route path="/proposals/:proposalId" element={<ProposalEditorPage />} />
           <Route path="/clients/:clientId/questionnaires/:questionnaireId" element={<QuestionnaireEditorPage />} />
           <Route path="/projects" element={<ProjectsPage />} />
           <Route path="/discovery" element={<DiscoveryPage />} />

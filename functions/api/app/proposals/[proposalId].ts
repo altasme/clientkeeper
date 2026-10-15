@@ -1,17 +1,32 @@
-// Cloudflare Pages Function: GET/PATCH /api/app/clients/:id/proposals/:proposalId
+// Cloudflare Pages Function: GET/PATCH /api/app/proposals/:proposalId
+//
+// [2026-10-15] Replaces the old client-nested
+// /api/app/clients/:id/proposals/:proposalId -- a proposal is now
+// resolved by its own id alone, since it can belong to either a client
+// or a lead (CLAUDE.md §25: "a proposal generator that doesn't need a
+// client"). Nesting under a parent made sense when there was only ever
+// one kind of parent; keeping both /clients/:id/proposals/index.ts and
+// /leads/:id/proposals/index.ts for listing/creation (parent-scoped,
+// since "all of this client's/lead's proposals" is a meaningful list)
+// but flattening everything that only ever needs the proposal's own id
+// avoids duplicating this detail/publish/revoke logic per parent type.
 //
 // GET returns full detail for the editor/detail page: the live draft
 // buffer (title/content_html), every published version (read-only,
-// newest first), and the signature record if one exists. PATCH updates
-// the draft buffer only -- it is a no-op on the frozen proposal_versions
-// rows, which is the whole point of the draft/version split documented
-// in d1/schema.sql. Editing is blocked once status is 'signed' (the spec's
-// "do not allow published or signed proposals to be silently modified");
-// the publish endpoint (publish.ts) is the only path back to an editable
+// newest first), the signature record if one exists, and which parent
+// (clientId or leadId) owns it so the frontend can build the right
+// "back to..." link and show/hide the questionnaire-link card (a
+// questionnaire can only ever be linked to a client-backed proposal,
+// see schema.sql's note on questionnaires.client_id staying required).
+// PATCH updates the draft buffer only -- it is a no-op on the frozen
+// proposal_versions rows, which is the whole point of the draft/version
+// split documented in d1/schema.sql. Editing is blocked once status is
+// 'signed' only in the sense that it doesn't touch the signature; the
+// publish endpoint (publish.ts) is the only path back to an editable
 // state after that, and it explicitly resets status + requires a fresh
 // signature.
 
-import type { StaffUser } from "../../../../../_lib/roles";
+import type { StaffUser } from "../../../_lib/roles";
 
 interface Env {
   DB?: D1Database;
@@ -27,7 +42,8 @@ function normalizeParam(value: string | string[]): string {
 
 interface ProposalRow {
   id: string;
-  client_id: string;
+  client_id: string | null;
+  lead_id: string | null;
   slug: string;
   access_token: string;
   title: string;
@@ -40,23 +56,22 @@ interface ProposalRow {
   updated_at: string;
 }
 
-async function loadProposal(db: D1Database, clientId: string, proposalId: string): Promise<ProposalRow | null> {
+async function loadProposal(db: D1Database, proposalId: string): Promise<ProposalRow | null> {
   return db
     .prepare(
-      `SELECT id, client_id, slug, access_token, title, content_html, status, current_version, questionnaire_id, expires_at, created_at, updated_at
-       FROM proposals WHERE id = ? AND client_id = ?`
+      `SELECT id, client_id, lead_id, slug, access_token, title, content_html, status, current_version, questionnaire_id, expires_at, created_at, updated_at
+       FROM proposals WHERE id = ?`
     )
-    .bind(proposalId, clientId)
+    .bind(proposalId)
     .first<ProposalRow>();
 }
 
-export const onRequestGet: PagesFunction<Env, "id" | "proposalId"> = async ({ env, params }) => {
+export const onRequestGet: PagesFunction<Env, "proposalId"> = async ({ env, params }) => {
   if (!env.DB) return jsonResponse(500, { error: "Not configured" });
   const db = env.DB;
-  const clientId = normalizeParam(params.id);
   const proposalId = normalizeParam(params.proposalId);
 
-  const proposal = await loadProposal(db, clientId, proposalId);
+  const proposal = await loadProposal(db, proposalId);
   if (!proposal) return jsonResponse(404, { error: "Proposal not found" });
 
   const versions = await db
@@ -71,6 +86,8 @@ export const onRequestGet: PagesFunction<Env, "id" | "proposalId"> = async ({ en
 
   return jsonResponse(200, {
     id: proposal.id,
+    clientId: proposal.client_id,
+    leadId: proposal.lead_id,
     slug: proposal.slug,
     publicUrl: `https://www.altasme.com/proposal/${proposal.slug}?t=${proposal.access_token}`,
     title: proposal.title,
@@ -96,13 +113,12 @@ export const onRequestGet: PagesFunction<Env, "id" | "proposalId"> = async ({ en
   });
 };
 
-export const onRequestPatch: PagesFunction<Env, "id" | "proposalId", { staffUser: StaffUser }> = async ({ request, env, params }) => {
+export const onRequestPatch: PagesFunction<Env, "proposalId", { staffUser: StaffUser }> = async ({ request, env, params }) => {
   if (!env.DB) return jsonResponse(500, { error: "Not configured" });
   const db = env.DB;
-  const clientId = normalizeParam(params.id);
   const proposalId = normalizeParam(params.proposalId);
 
-  const proposal = await loadProposal(db, clientId, proposalId);
+  const proposal = await loadProposal(db, proposalId);
   if (!proposal) return jsonResponse(404, { error: "Proposal not found" });
   // Editing the draft buffer is always allowed, even once signed -- this
   // is how a "material revision" starts (spec: "do not allow published
@@ -127,7 +143,14 @@ export const onRequestPatch: PagesFunction<Env, "id" | "proposalId", { staffUser
   if (!title) return jsonResponse(400, { error: "Title is required." });
 
   if (questionnaireId) {
-    const q = await db.prepare(`SELECT id FROM questionnaires WHERE id = ? AND client_id = ?`).bind(questionnaireId, clientId).first();
+    if (!proposal.client_id) {
+      // A lead-backed proposal has no client yet, and every
+      // questionnaire belongs to a client (schema.sql's
+      // questionnaires.client_id stays NOT NULL) -- there is nothing a
+      // lead-backed proposal could ever validly link to.
+      return jsonResponse(400, { error: "This proposal has no client yet, so it can't be linked to a questionnaire." });
+    }
+    const q = await db.prepare(`SELECT id FROM questionnaires WHERE id = ? AND client_id = ?`).bind(questionnaireId, proposal.client_id).first();
     if (!q) return jsonResponse(400, { error: "That questionnaire doesn't belong to this client." });
   }
 
