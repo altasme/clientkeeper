@@ -1020,7 +1020,7 @@ function ProposalsBlock({ clientId }: { clientId: string }) {
     setCreating(true);
     try {
       const { id } = await createProposal(clientId);
-      navigate(`/clients/${clientId}/proposals/${id}`);
+      navigate(`/proposals/${id}`);
     } catch {
       setCreating(false);
     }
@@ -1034,7 +1034,7 @@ function ProposalsBlock({ clientId }: { clientId: string }) {
         <ul className="space-y-2">
           {proposals.map((p) => (
             <li key={p.id} className="flex items-center justify-between rounded-lg border border-ink/10 p-3 text-sm">
-              <Link to={`/clients/${clientId}/proposals/${p.id}`} className="font-medium text-brand-navy hover:underline">
+              <Link to={`/proposals/${p.id}`} className="font-medium text-brand-navy hover:underline">
                 {p.title}
               </Link>
               <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold uppercase tracking-wide ${PROPOSAL_STATUS_STYLES[p.status] ?? "bg-ink/10 text-ink/60"}`}>{p.status}</span>

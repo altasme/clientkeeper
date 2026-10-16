@@ -1,4 +1,14 @@
-// Cloudflare Pages Function: POST /api/app/clients/:id/proposals/:proposalId/publish
+// Cloudflare Pages Function: POST /api/app/proposals/:proposalId/publish
+//
+// [2026-10-15] Flattened out of /clients/:id/proposals/:proposalId/
+// publish for the same reason as the sibling detail endpoint -- a
+// proposal can now belong to a client or a lead (CLAUDE.md §25), so it's
+// resolved by its own id rather than requiring a client parent in the
+// URL. The `client_activity` timeline entry is written only when the
+// proposal actually has a client_id; a lead-backed proposal has no
+// client timeline to write to, and there is no equivalent "lead
+// activity" table in this schema -- the global `audit_log` entry below
+// still records the action regardless of which parent the proposal has.
 //
 // Snapshots the current draft buffer (proposals.title/content_html) into
 // a new, immutable proposal_versions row and flips status to
@@ -13,7 +23,7 @@
 // of what was actually accepted before, and the client must sign again
 // against the new version.
 
-import type { StaffUser } from "../../../../../../_lib/roles";
+import type { StaffUser } from "../../../../_lib/roles";
 
 interface Env {
   DB?: D1Database;
@@ -27,16 +37,15 @@ function normalizeParam(value: string | string[]): string {
   return Array.isArray(value) ? value[0]! : value;
 }
 
-export const onRequestPost: PagesFunction<Env, "id" | "proposalId", { staffUser: StaffUser }> = async ({ env, params, data }) => {
+export const onRequestPost: PagesFunction<Env, "proposalId", { staffUser: StaffUser }> = async ({ env, params, data }) => {
   if (!env.DB) return jsonResponse(500, { error: "Not configured" });
   const db = env.DB;
-  const clientId = normalizeParam(params.id);
   const proposalId = normalizeParam(params.proposalId);
 
   const proposal = await db
-    .prepare(`SELECT id, title, content_html, status, current_version FROM proposals WHERE id = ? AND client_id = ?`)
-    .bind(proposalId, clientId)
-    .first<{ id: string; title: string; content_html: string; status: string; current_version: number }>();
+    .prepare(`SELECT id, client_id, title, content_html, status, current_version FROM proposals WHERE id = ?`)
+    .bind(proposalId)
+    .first<{ id: string; client_id: string | null; title: string; content_html: string; status: string; current_version: number }>();
   if (!proposal) return jsonResponse(404, { error: "Proposal not found" });
   if (["expired", "revoked"].includes(proposal.status)) {
     return jsonResponse(409, { error: `Cannot publish a proposal that is ${proposal.status}.` });
@@ -59,16 +68,18 @@ export const onRequestPost: PagesFunction<Env, "id" | "proposalId", { staffUser:
     .bind(newStatus, versionNumber, now, proposalId)
     .run();
 
-  await db
-    .prepare(`INSERT INTO client_activity (id, client_id, type, description, actor_id, created_at) VALUES (?, ?, 'proposal_published', ?, ?, ?)`)
-    .bind(
-      crypto.randomUUID(),
-      clientId,
-      wasSigned ? `Proposal "${proposal.title}" revised (v${versionNumber}) -- client must re-sign` : `Proposal "${proposal.title}" published (v${versionNumber})`,
-      data.staffUser.id,
-      now
-    )
-    .run();
+  if (proposal.client_id) {
+    await db
+      .prepare(`INSERT INTO client_activity (id, client_id, type, description, actor_id, created_at) VALUES (?, ?, 'proposal_published', ?, ?, ?)`)
+      .bind(
+        crypto.randomUUID(),
+        proposal.client_id,
+        wasSigned ? `Proposal "${proposal.title}" revised (v${versionNumber}) -- client must re-sign` : `Proposal "${proposal.title}" published (v${versionNumber})`,
+        data.staffUser.id,
+        now
+      )
+      .run();
+  }
 
   await db
     .prepare(`INSERT INTO audit_log (id, actor_id, action, entity_type, entity_id, before, after, reason, created_at) VALUES (?, ?, 'proposal_published', 'proposal', ?, ?, ?, NULL, ?)`)

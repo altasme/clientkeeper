@@ -432,6 +432,13 @@ export interface Lead {
   updated_at: string;
 }
 
+// [2026-10-15] Single-lead fetch for LeadDetailPage (CLAUDE.md §25's
+// "proposal generator that doesn't need a client" -- the lead-detail
+// page a prospect proposal is created and viewed from).
+export function fetchLead(id: string): Promise<Lead> {
+  return apiFetch(`/api/app/leads/${id}`);
+}
+
 export function fetchLeads(query: { q?: string; status?: string } = {}): Promise<Lead[]> {
   const params = new URLSearchParams();
   if (query.q) params.set("q", query.q);
@@ -739,6 +746,32 @@ export function createProposal(clientId: string, title?: string): Promise<{ id: 
   return apiFetch(`/api/app/clients/${clientId}/proposals`, { method: "POST", body: JSON.stringify({ title }) });
 }
 
+// [2026-10-15] Lead-scoped siblings, for a proposal sent to a prospect
+// who isn't a client yet (CLAUDE.md §25). Same shapes as the client
+// versions above -- only the parent in the URL differs.
+export function fetchLeadProposals(leadId: string): Promise<ProposalListRow[]> {
+  return apiFetch(`/api/app/leads/${leadId}/proposals`);
+}
+
+export function createLeadProposal(leadId: string, title?: string): Promise<{ id: string; slug: string; title: string; status: ProposalStatus }> {
+  return apiFetch(`/api/app/leads/${leadId}/proposals`, { method: "POST", body: JSON.stringify({ title }) });
+}
+
+// [2026-10-16] A proposal with no parent at all (CLAUDE.md §26: "create a
+// proposal even outside of a lead or client"). The prospect's contact
+// info is required here, at creation, since it's what altaventureswebsite's
+// public sign endpoint uses to auto-create a real client the moment this
+// proposal is signed -- it's never collected from the public signer.
+export function createStandaloneProposal(fields: {
+  prospectFullName: string;
+  prospectBusinessName: string;
+  prospectEmail: string;
+  prospectPhone?: string;
+  title?: string;
+}): Promise<{ id: string; slug: string; title: string; status: ProposalStatus }> {
+  return apiFetch(`/api/app/proposals`, { method: "POST", body: JSON.stringify(fields) });
+}
+
 export interface ProposalVersion {
   id: string;
   versionNumber: number;
@@ -759,6 +792,20 @@ export interface ProposalSignature {
 
 export interface ProposalDetail {
   id: string;
+  // [2026-10-15] Exactly one of these is set -- CLAUDE.md §25's
+  // client-or-lead parent. The editor uses this to build the right
+  // "back to..." link and to hide the questionnaire-link card when
+  // there's no client to link a questionnaire to.
+  clientId: string | null;
+  leadId: string | null;
+  // [2026-10-16] Only ever set on a standalone proposal (clientId and
+  // leadId both null) -- the prospect info staff entered at creation,
+  // read-only here (there's no PATCH support for these, per CLAUDE.md
+  // §26: entered once, at creation, never edited after).
+  prospectFullName: string | null;
+  prospectBusinessName: string | null;
+  prospectEmail: string | null;
+  prospectPhone: string | null;
   slug: string;
   publicUrl: string;
   title: string;
@@ -773,24 +820,27 @@ export interface ProposalDetail {
   signature: ProposalSignature | null;
 }
 
-export function fetchProposalDetail(clientId: string, proposalId: string): Promise<ProposalDetail> {
-  return apiFetch(`/api/app/clients/${clientId}/proposals/${proposalId}`);
+// [2026-10-15] Flattened to /api/app/proposals/:id -- a proposal no
+// longer needs a client (or lead) parent in the URL to be resolved by
+// its own id (CLAUDE.md §25). Resolving by id alone also means this one
+// set of calls now serves both client-backed and lead-backed proposals.
+export function fetchProposalDetail(proposalId: string): Promise<ProposalDetail> {
+  return apiFetch(`/api/app/proposals/${proposalId}`);
 }
 
 export function updateProposalDraft(
-  clientId: string,
   proposalId: string,
   fields: { title?: string; contentHtml?: string; questionnaireId?: string | null }
 ): Promise<{ ok: true; updatedAt: string }> {
-  return apiFetch(`/api/app/clients/${clientId}/proposals/${proposalId}`, { method: "PATCH", body: JSON.stringify(fields) });
+  return apiFetch(`/api/app/proposals/${proposalId}`, { method: "PATCH", body: JSON.stringify(fields) });
 }
 
-export function publishProposal(clientId: string, proposalId: string): Promise<{ status: ProposalStatus; versionNumber: number }> {
-  return apiFetch(`/api/app/clients/${clientId}/proposals/${proposalId}/publish`, { method: "POST" });
+export function publishProposal(proposalId: string): Promise<{ status: ProposalStatus; versionNumber: number }> {
+  return apiFetch(`/api/app/proposals/${proposalId}/publish`, { method: "POST" });
 }
 
-export function revokeProposal(clientId: string, proposalId: string): Promise<{ ok: true }> {
-  return apiFetch(`/api/app/clients/${clientId}/proposals/${proposalId}/revoke`, { method: "POST" });
+export function revokeProposal(proposalId: string): Promise<{ ok: true }> {
+  return apiFetch(`/api/app/proposals/${proposalId}/revoke`, { method: "POST" });
 }
 
 export type QuestionnaireStatus = "draft" | "published" | "submitted" | "closed";
