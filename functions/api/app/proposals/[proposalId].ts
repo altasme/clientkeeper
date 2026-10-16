@@ -44,6 +44,10 @@ interface ProposalRow {
   id: string;
   client_id: string | null;
   lead_id: string | null;
+  prospect_full_name: string | null;
+  prospect_business_name: string | null;
+  prospect_email: string | null;
+  prospect_phone: string | null;
   slug: string;
   access_token: string;
   title: string;
@@ -59,7 +63,7 @@ interface ProposalRow {
 async function loadProposal(db: D1Database, proposalId: string): Promise<ProposalRow | null> {
   return db
     .prepare(
-      `SELECT id, client_id, lead_id, slug, access_token, title, content_html, status, current_version, questionnaire_id, expires_at, created_at, updated_at
+      `SELECT id, client_id, lead_id, prospect_full_name, prospect_business_name, prospect_email, prospect_phone, slug, access_token, title, content_html, status, current_version, questionnaire_id, expires_at, created_at, updated_at
        FROM proposals WHERE id = ?`
     )
     .bind(proposalId)
@@ -88,6 +92,10 @@ export const onRequestGet: PagesFunction<Env, "proposalId"> = async ({ env, para
     id: proposal.id,
     clientId: proposal.client_id,
     leadId: proposal.lead_id,
+    prospectFullName: proposal.prospect_full_name,
+    prospectBusinessName: proposal.prospect_business_name,
+    prospectEmail: proposal.prospect_email,
+    prospectPhone: proposal.prospect_phone,
     slug: proposal.slug,
     publicUrl: `https://www.altasme.com/proposal/${proposal.slug}?t=${proposal.access_token}`,
     title: proposal.title,

@@ -186,7 +186,26 @@ export default function ProposalEditorPage() {
         <Link to={`/leads/${proposal.leadId}`} className="text-xs font-semibold text-ink/50 hover:text-ink">
           &larr; Back to lead
         </Link>
-      ) : null}
+      ) : (
+        <Link to="/leads" className="text-xs font-semibold text-ink/50 hover:text-ink">
+          &larr; Back to leads
+        </Link>
+      )}
+
+      {!proposal.clientId && !proposal.leadId && (
+        // [2026-10-16] A standalone proposal (CLAUDE.md §26) has no lead
+        // or client to show a "back to..." link for -- this banner is
+        // what tells staff where the prospect info it was created with
+        // actually went, and what happens to it on signing.
+        <div className="mt-3 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900">
+          <p className="font-semibold">Standalone proposal, no client yet.</p>
+          <p className="mt-1">
+            {proposal.prospectFullName} &middot; {proposal.prospectBusinessName} &middot; {proposal.prospectEmail}
+            {proposal.prospectPhone ? ` · ${proposal.prospectPhone}` : ""}
+          </p>
+          <p className="mt-1 text-blue-700">A real client record is created automatically from this info the moment the prospect signs.</p>
+        </div>
+      )}
 
       <div className="mt-2 flex items-start justify-between gap-3">
         <input
@@ -274,12 +293,17 @@ export default function ProposalEditorPage() {
             </p>
           </Card>
         ) : (
-          // A lead-backed proposal has no client yet, and every
-          // questionnaire belongs to a client (CLAUDE.md §25) -- there
-          // is nothing valid to link here until this prospect becomes a
-          // real client.
+          // A lead-backed or standalone proposal has no client yet, and
+          // every questionnaire belongs to a client (CLAUDE.md §25/§26)
+          // -- there is nothing valid to link here until this prospect
+          // becomes a real client (manually, for a lead, or
+          // automatically on signing, for a standalone proposal).
           <Card title="Send to Questionnaire After Signing">
-            <p className="text-xs text-ink/50">This proposal isn't attached to a client yet, so it can't be linked to a questionnaire. Convert this lead to a client first if you need that.</p>
+            <p className="text-xs text-ink/50">
+              {proposal.leadId
+                ? "This proposal isn't attached to a client yet, so it can't be linked to a questionnaire. Convert this lead to a client first if you need that."
+                : "This proposal isn't attached to a client yet, so it can't be linked to a questionnaire. Once the prospect signs, a client is created automatically and you can link one then."}
+            </p>
           </Card>
         )}
 

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { fetchLeads, updateLead, createLead, type Lead } from "../lib/api";
+import { fetchLeads, updateLead, createLead, createStandaloneProposal, type Lead } from "../lib/api";
 
 const STATUS_OPTIONS: Lead["status"][] = ["new", "contacted", "qualified", "converted", "lost"];
 
@@ -77,6 +77,81 @@ function AddLeadForm({ onCreated }: { onCreated: (id: string) => void }) {
   );
 }
 
+// [2026-10-16] A proposal doesn't need a lead or client at all anymore
+// (CLAUDE.md §26: "create a proposal even outside of a lead or client" --
+// signing it later auto-creates a real client). This form is where staff
+// reach that: same spot and shape as AddLeadForm above (this is already
+// the page for "working with a prospect who isn't a client yet"), but
+// collecting the contact info a client record actually needs (name,
+// business name, a valid email) rather than a lead's looser optional
+// fields, since there's no lead row here to fall back on later.
+function NewStandaloneProposalForm({ onCreated }: { onCreated: (id: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [prospectFullName, setProspectFullName] = useState("");
+  const [prospectBusinessName, setProspectBusinessName] = useState("");
+  const [prospectEmail, setProspectEmail] = useState("");
+  const [prospectPhone, setProspectPhone] = useState("");
+  const [title, setTitle] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="rounded-full border border-ink/15 px-4 py-2 text-sm font-semibold text-brand-navy hover:border-brand-blue hover:text-brand-blue"
+      >
+        + New Proposal
+      </button>
+    );
+  }
+
+  const handleSave = async () => {
+    if (!prospectFullName.trim() || !prospectBusinessName.trim() || !prospectEmail.trim()) {
+      setError("Name, business name, and email are all required -- they're what lets us create a client once this is signed.");
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      const { id } = await createStandaloneProposal({
+        prospectFullName: prospectFullName.trim(),
+        prospectBusinessName: prospectBusinessName.trim(),
+        prospectEmail: prospectEmail.trim(),
+        prospectPhone: prospectPhone.trim() || undefined,
+        title: title.trim() || undefined,
+      });
+      onCreated(id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't create this proposal.");
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="mt-4 rounded-xl border border-ink/10 bg-white p-4">
+      <p className="text-xs text-ink/50">No lead or client needed -- a real client is created automatically once this proposal is signed.</p>
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <input placeholder="Prospect's full name" value={prospectFullName} onChange={(e) => setProspectFullName(e.target.value)} className="rounded-lg border border-ink/15 px-3 py-2 text-sm" />
+        <input placeholder="Business name" value={prospectBusinessName} onChange={(e) => setProspectBusinessName(e.target.value)} className="rounded-lg border border-ink/15 px-3 py-2 text-sm" />
+        <input placeholder="Email" type="email" value={prospectEmail} onChange={(e) => setProspectEmail(e.target.value)} className="rounded-lg border border-ink/15 px-3 py-2 text-sm" />
+        <input placeholder="Phone (optional)" value={prospectPhone} onChange={(e) => setProspectPhone(e.target.value)} className="rounded-lg border border-ink/15 px-3 py-2 text-sm" />
+        <input placeholder="Proposal title (optional)" value={title} onChange={(e) => setTitle(e.target.value)} className="rounded-lg border border-ink/15 px-3 py-2 text-sm sm:col-span-2" />
+      </div>
+      {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
+      <div className="mt-3 flex gap-2">
+        <button type="button" disabled={saving} onClick={handleSave} className="rounded-full bg-brand-blue px-4 py-1.5 text-xs font-semibold text-white hover:bg-[#0b57cc] disabled:opacity-50">
+          {saving ? "Creating..." : "Create Proposal"}
+        </button>
+        <button type="button" onClick={() => setOpen(false)} className="text-xs text-ink/50 hover:text-ink">
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function LeadsPage() {
   const navigate = useNavigate();
   const [leads, setLeads] = useState<Lead[]>([]);
@@ -123,7 +198,8 @@ export default function LeadsPage() {
             </option>
           ))}
         </select>
-        <div className="ml-auto">
+        <div className="ml-auto flex gap-2">
+          <NewStandaloneProposalForm onCreated={(id) => navigate(`/proposals/${id}`)} />
           <AddLeadForm onCreated={(id) => navigate(`/leads/${id}`)} />
         </div>
       </div>

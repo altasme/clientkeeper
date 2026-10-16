@@ -757,6 +757,21 @@ export function createLeadProposal(leadId: string, title?: string): Promise<{ id
   return apiFetch(`/api/app/leads/${leadId}/proposals`, { method: "POST", body: JSON.stringify({ title }) });
 }
 
+// [2026-10-16] A proposal with no parent at all (CLAUDE.md §26: "create a
+// proposal even outside of a lead or client"). The prospect's contact
+// info is required here, at creation, since it's what altaventureswebsite's
+// public sign endpoint uses to auto-create a real client the moment this
+// proposal is signed -- it's never collected from the public signer.
+export function createStandaloneProposal(fields: {
+  prospectFullName: string;
+  prospectBusinessName: string;
+  prospectEmail: string;
+  prospectPhone?: string;
+  title?: string;
+}): Promise<{ id: string; slug: string; title: string; status: ProposalStatus }> {
+  return apiFetch(`/api/app/proposals`, { method: "POST", body: JSON.stringify(fields) });
+}
+
 export interface ProposalVersion {
   id: string;
   versionNumber: number;
@@ -783,6 +798,14 @@ export interface ProposalDetail {
   // there's no client to link a questionnaire to.
   clientId: string | null;
   leadId: string | null;
+  // [2026-10-16] Only ever set on a standalone proposal (clientId and
+  // leadId both null) -- the prospect info staff entered at creation,
+  // read-only here (there's no PATCH support for these, per CLAUDE.md
+  // §26: entered once, at creation, never edited after).
+  prospectFullName: string | null;
+  prospectBusinessName: string | null;
+  prospectEmail: string | null;
+  prospectPhone: string | null;
   slug: string;
   publicUrl: string;
   title: string;
