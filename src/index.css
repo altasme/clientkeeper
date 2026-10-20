@@ -23,6 +23,21 @@
    no @tailwindcss/typography plugin, so this is a small, scoped,
    hand-written substitute rather than pulling in a dependency for one
    component. */
+.proposal-content p,
+.proposal-content li {
+  /* [2026-10-20] A long unbroken word (a URL, a reference code) in
+     normal prose has no reason to force the whole page wider than the
+     viewport on mobile -- scoped to flow text only, deliberately NOT
+     applied to table cells below: a cell that's allowed to break any
+     word loses the real minimum-content-width that makes the table's
+     own overflow-x:auto correctly trigger a scrollbar instead of
+     cramming every cell down to character-by-character wrapping. Fix
+     mirrored from altaventureswebsite's identical .proposal-content
+     block (see that repo's CLAUDE.md for the full writeup) -- these two
+     repos keep this block in sync by hand, no shared CSS module. */
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
 .proposal-content h2 {
   font-size: 1.25rem;
   font-weight: 700;
@@ -54,6 +69,19 @@
   text-decoration: underline;
 }
 .proposal-content table {
+  /* [2026-10-20] `width: 100%` alone does nothing once a table has
+     several columns of real content -- the browser's default
+     table-layout still sizes columns off their content's intrinsic
+     width and blows past the container, forcing the ENTIRE page wider
+     than the viewport on mobile. `display: block` + `overflow-x: auto`
+     turns the table itself into its own horizontally-scrollable box --
+     its table-row-group/table-row/table-cell children keep their
+     normal table layout internally, so this needs no wrapper <div>.
+     Mirrored from altaventureswebsite's identical block. */
+  display: block;
+  overflow-x: auto;
+  max-width: 100%;
+  -webkit-overflow-scrolling: touch;
   border-collapse: collapse;
   width: 100%;
   margin: 0.75rem 0;
