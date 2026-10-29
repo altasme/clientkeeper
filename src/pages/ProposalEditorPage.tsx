@@ -44,6 +44,13 @@ export default function ProposalEditorPage() {
   const [title, setTitle] = useState("");
   const [contentHtml, setContentHtml] = useState("");
   const [questionnaireId, setQuestionnaireId] = useState<string>("");
+  // [2026-10-29] Payment-request fields, CLAUDE.md §27 -- shown on the
+  // public payment screen the client lands on right after signing.
+  const [paymentEnabled, setPaymentEnabled] = useState(true);
+  const [paymentAmountLabel, setPaymentAmountLabel] = useState("");
+  const [paymentGcashNumber, setPaymentGcashNumber] = useState("");
+  const [paymentGcashAccountName, setPaymentGcashAccountName] = useState("");
+  const [paymentBankNote, setPaymentBankNote] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [publishing, setPublishing] = useState(false);
@@ -59,6 +66,11 @@ export default function ProposalEditorPage() {
         setTitle(p.title);
         setContentHtml(p.contentHtml);
         setQuestionnaireId(p.questionnaireId ?? "");
+        setPaymentEnabled(p.paymentEnabled);
+        setPaymentAmountLabel(p.paymentAmountLabel);
+        setPaymentGcashNumber(p.paymentGcashNumber);
+        setPaymentGcashAccountName(p.paymentGcashAccountName);
+        setPaymentBankNote(p.paymentBankNote);
         // Questionnaires are always client-scoped (schema.sql's
         // questionnaires.client_id stays NOT NULL) -- a lead-backed
         // proposal has nothing valid to list here.
@@ -80,7 +92,16 @@ export default function ProposalEditorPage() {
     setSaving(true);
     setError(null);
     try {
-      await updateProposalDraft(proposalId, { title, contentHtml, questionnaireId: questionnaireId || null });
+      await updateProposalDraft(proposalId, {
+        title,
+        contentHtml,
+        questionnaireId: questionnaireId || null,
+        paymentEnabled,
+        paymentAmountLabel,
+        paymentGcashNumber,
+        paymentGcashAccountName,
+        paymentBankNote,
+      });
       load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't save the draft.");
@@ -271,8 +292,73 @@ export default function ProposalEditorPage() {
                 This record stays exactly as accepted. Editing and publishing a revision below resets status to "Published" and the client must sign again &mdash; it will not alter this signature.
               </p>
             )}
+            {proposal.paymentMarkedPaidAt && (
+              <p className="mt-2 rounded-lg bg-green-50 px-3 py-2 text-xs font-semibold text-green-800">
+                Client marked this as paid on {new Date(proposal.paymentMarkedPaidAt).toLocaleString()}. This is the client's own claim, not a confirmed
+                payment &mdash; verify against the actual GCash/bank transfer before treating the project as funded.
+              </p>
+            )}
           </Card>
         )}
+
+        <Card title="Payment Request">
+          <label className="flex items-center gap-2 text-sm font-semibold text-brand-navy">
+            <input type="checkbox" checked={paymentEnabled} onChange={(e) => setPaymentEnabled(e.target.checked)} className="h-4 w-4 rounded border-ink/30" />
+            Request payment after signing
+          </label>
+          <p className="mt-1 text-xs text-ink/50">
+            When on, the client lands on a payment screen immediately after signing &mdash; the signature is recorded either way, even if they never pay.
+          </p>
+
+          {paymentEnabled && (
+            <div className="mt-4 grid gap-3">
+              <div>
+                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink/50">Amount</label>
+                <input
+                  type="text"
+                  value={paymentAmountLabel}
+                  onChange={(e) => setPaymentAmountLabel(e.target.value)}
+                  placeholder="e.g. ₱25,000"
+                  className="w-full rounded-lg border border-ink/15 bg-white px-3 py-2 text-sm"
+                />
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink/50">GCash Number</label>
+                  <input
+                    type="text"
+                    value={paymentGcashNumber}
+                    onChange={(e) => setPaymentGcashNumber(e.target.value)}
+                    className="w-full rounded-lg border border-ink/15 bg-white px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink/50">GCash Account Name</label>
+                  <input
+                    type="text"
+                    value={paymentGcashAccountName}
+                    onChange={(e) => setPaymentGcashAccountName(e.target.value)}
+                    className="w-full rounded-lg border border-ink/15 bg-white px-3 py-2 text-sm"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink/50">Bank Transfer Note</label>
+                <input
+                  type="text"
+                  value={paymentBankNote}
+                  onChange={(e) => setPaymentBankNote(e.target.value)}
+                  placeholder="Bank transfer available upon request."
+                  className="w-full rounded-lg border border-ink/15 bg-white px-3 py-2 text-sm"
+                />
+              </div>
+              <p className="text-xs text-ink/50">
+                Changes here save with "Save Draft" below and take effect immediately &mdash; no need to publish a new version or ask the client to sign
+                again.
+              </p>
+            </div>
+          )}
+        </Card>
 
         {proposal.clientId ? (
           <Card title="Send to Questionnaire After Signing">
