@@ -759,13 +759,16 @@ export function createLeadProposal(leadId: string, title?: string): Promise<{ id
 
 // [2026-10-16] A proposal with no parent at all (CLAUDE.md §26: "create a
 // proposal even outside of a lead or client"). The prospect's contact
-// info is required here, at creation, since it's what altaventureswebsite's
+// info is collected here, at creation, since it's what altaventureswebsite's
 // public sign endpoint uses to auto-create a real client the moment this
 // proposal is signed -- it's never collected from the public signer.
+// prospectEmail is optional [2026-10-29]: name/business name are still
+// required, but a proposal created without an email simply won't
+// auto-create a client on signing (see the Function's own comment).
 export function createStandaloneProposal(fields: {
   prospectFullName: string;
   prospectBusinessName: string;
-  prospectEmail: string;
+  prospectEmail?: string;
   prospectPhone?: string;
   title?: string;
 }): Promise<{ id: string; slug: string; title: string; status: ProposalStatus }> {
