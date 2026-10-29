@@ -814,6 +814,15 @@ export interface ProposalDetail {
   currentVersion: number;
   questionnaireId: string | null;
   expiresAt: string | null;
+  // [2026-10-29] Payment-request fields, CLAUDE.md §27 -- configurable
+  // per proposal in the editor below, shown on the public payment screen
+  // right after the client signs.
+  paymentEnabled: boolean;
+  paymentAmountLabel: string;
+  paymentGcashNumber: string;
+  paymentGcashAccountName: string;
+  paymentBankNote: string;
+  paymentMarkedPaidAt: string | null;
   createdAt: string;
   updatedAt: string;
   versions: ProposalVersion[];
@@ -830,7 +839,16 @@ export function fetchProposalDetail(proposalId: string): Promise<ProposalDetail>
 
 export function updateProposalDraft(
   proposalId: string,
-  fields: { title?: string; contentHtml?: string; questionnaireId?: string | null }
+  fields: {
+    title?: string;
+    contentHtml?: string;
+    questionnaireId?: string | null;
+    paymentEnabled?: boolean;
+    paymentAmountLabel?: string;
+    paymentGcashNumber?: string;
+    paymentGcashAccountName?: string;
+    paymentBankNote?: string;
+  }
 ): Promise<{ ok: true; updatedAt: string }> {
   return apiFetch(`/api/app/proposals/${proposalId}`, { method: "PATCH", body: JSON.stringify(fields) });
 }

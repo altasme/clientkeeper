@@ -25,6 +25,12 @@
 // publish endpoint (publish.ts) is the only path back to an editable
 // state after that, and it explicitly resets status + requires a fresh
 // signature.
+//
+// [2026-10-29] PATCH also updates the five payment_* fields (CLAUDE.md
+// §27) -- unlike title/contentHtml, these aren't versioned content and
+// take effect immediately, even on an already-signed proposal (fixing a
+// typo'd GCash number shouldn't require re-publishing and forcing the
+// client to sign again).
 
 import type { StaffUser } from "../../../_lib/roles";
 
@@ -56,6 +62,12 @@ interface ProposalRow {
   current_version: number;
   questionnaire_id: string | null;
   expires_at: string | null;
+  payment_enabled: number;
+  payment_amount_label: string;
+  payment_gcash_number: string;
+  payment_gcash_account_name: string;
+  payment_bank_note: string;
+  payment_marked_paid_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -63,7 +75,7 @@ interface ProposalRow {
 async function loadProposal(db: D1Database, proposalId: string): Promise<ProposalRow | null> {
   return db
     .prepare(
-      `SELECT id, client_id, lead_id, prospect_full_name, prospect_business_name, prospect_email, prospect_phone, slug, access_token, title, content_html, status, current_version, questionnaire_id, expires_at, created_at, updated_at
+      `SELECT id, client_id, lead_id, prospect_full_name, prospect_business_name, prospect_email, prospect_phone, slug, access_token, title, content_html, status, current_version, questionnaire_id, expires_at, payment_enabled, payment_amount_label, payment_gcash_number, payment_gcash_account_name, payment_bank_note, payment_marked_paid_at, created_at, updated_at
        FROM proposals WHERE id = ?`
     )
     .bind(proposalId)
@@ -104,6 +116,12 @@ export const onRequestGet: PagesFunction<Env, "proposalId"> = async ({ env, para
     currentVersion: proposal.current_version,
     questionnaireId: proposal.questionnaire_id,
     expiresAt: proposal.expires_at,
+    paymentEnabled: !!proposal.payment_enabled,
+    paymentAmountLabel: proposal.payment_amount_label,
+    paymentGcashNumber: proposal.payment_gcash_number,
+    paymentGcashAccountName: proposal.payment_gcash_account_name,
+    paymentBankNote: proposal.payment_bank_note,
+    paymentMarkedPaidAt: proposal.payment_marked_paid_at,
     createdAt: proposal.created_at,
     updatedAt: proposal.updated_at,
     versions: versions.results.map((v) => ({ id: v.id, versionNumber: v.version_number, title: v.title, contentHtml: v.content_html, createdAt: v.created_at })),
@@ -148,6 +166,15 @@ export const onRequestPatch: PagesFunction<Env, "proposalId", { staffUser: Staff
   const contentHtml = typeof b.contentHtml === "string" ? b.contentHtml : proposal.content_html;
   const questionnaireId = b.questionnaireId === null ? null : typeof b.questionnaireId === "string" && b.questionnaireId.trim() ? b.questionnaireId.trim() : undefined;
 
+  // Payment-request fields (CLAUDE.md §27) -- operational, not versioned
+  // content, so they're PATCHed directly here same as title/contentHtml
+  // rather than only taking effect on the next publish.
+  const paymentEnabled = typeof b.paymentEnabled === "boolean" ? (b.paymentEnabled ? 1 : 0) : proposal.payment_enabled;
+  const paymentAmountLabel = typeof b.paymentAmountLabel === "string" ? b.paymentAmountLabel.trim() : proposal.payment_amount_label;
+  const paymentGcashNumber = typeof b.paymentGcashNumber === "string" ? b.paymentGcashNumber.trim() : proposal.payment_gcash_number;
+  const paymentGcashAccountName = typeof b.paymentGcashAccountName === "string" ? b.paymentGcashAccountName.trim() : proposal.payment_gcash_account_name;
+  const paymentBankNote = typeof b.paymentBankNote === "string" ? b.paymentBankNote.trim() : proposal.payment_bank_note;
+
   if (!title) return jsonResponse(400, { error: "Title is required." });
 
   if (questionnaireId) {
@@ -165,9 +192,20 @@ export const onRequestPatch: PagesFunction<Env, "proposalId", { staffUser: Staff
   const now = new Date().toISOString();
   await db
     .prepare(
-      `UPDATE proposals SET title = ?, content_html = ?, questionnaire_id = ?, updated_at = ? WHERE id = ?`
+      `UPDATE proposals SET title = ?, content_html = ?, questionnaire_id = ?, payment_enabled = ?, payment_amount_label = ?, payment_gcash_number = ?, payment_gcash_account_name = ?, payment_bank_note = ?, updated_at = ? WHERE id = ?`
     )
-    .bind(title, contentHtml, questionnaireId === undefined ? proposal.questionnaire_id : questionnaireId, now, proposalId)
+    .bind(
+      title,
+      contentHtml,
+      questionnaireId === undefined ? proposal.questionnaire_id : questionnaireId,
+      paymentEnabled,
+      paymentAmountLabel,
+      paymentGcashNumber,
+      paymentGcashAccountName,
+      paymentBankNote,
+      now,
+      proposalId
+    )
     .run();
 
   return jsonResponse(200, { ok: true, updatedAt: now });

@@ -22,6 +22,10 @@
 // the prior proposal_signatures row untouched as the historical record
 // of what was actually accepted before, and the client must sign again
 // against the new version.
+//
+// [2026-10-29] Also blocks publishing with payment_enabled on but no
+// payment_amount_label set, and clears payment_marked_paid_at on a
+// republish of a previously-signed proposal -- see CLAUDE.md §27.
 
 import type { StaffUser } from "../../../../_lib/roles";
 
@@ -43,14 +47,30 @@ export const onRequestPost: PagesFunction<Env, "proposalId", { staffUser: StaffU
   const proposalId = normalizeParam(params.proposalId);
 
   const proposal = await db
-    .prepare(`SELECT id, client_id, title, content_html, status, current_version FROM proposals WHERE id = ?`)
+    .prepare(`SELECT id, client_id, title, content_html, status, current_version, payment_enabled, payment_amount_label FROM proposals WHERE id = ?`)
     .bind(proposalId)
-    .first<{ id: string; client_id: string | null; title: string; content_html: string; status: string; current_version: number }>();
+    .first<{
+      id: string;
+      client_id: string | null;
+      title: string;
+      content_html: string;
+      status: string;
+      current_version: number;
+      payment_enabled: number;
+      payment_amount_label: string;
+    }>();
   if (!proposal) return jsonResponse(404, { error: "Proposal not found" });
   if (["expired", "revoked"].includes(proposal.status)) {
     return jsonResponse(409, { error: `Cannot publish a proposal that is ${proposal.status}.` });
   }
   if (!proposal.content_html.trim()) return jsonResponse(400, { error: "Write the proposal content before publishing." });
+  // [2026-10-29] CLAUDE.md §27: a blank "Amount: " on a live client-facing
+  // payment screen would look unfinished, exactly the thing that payment
+  // screen's whole purpose (convincing, easy to sell) argues against --
+  // same spirit as the content-html check just above.
+  if (proposal.payment_enabled && !proposal.payment_amount_label.trim()) {
+    return jsonResponse(400, { error: "Set a payment amount before publishing, or turn off the payment request for this proposal." });
+  }
 
   const now = new Date().toISOString();
   const versionNumber = proposal.current_version + 1;
@@ -63,8 +83,17 @@ export const onRequestPost: PagesFunction<Env, "proposalId", { staffUser: StaffU
     .bind(versionId, proposalId, versionNumber, proposal.title, proposal.content_html, data.staffUser.id, now)
     .run();
 
+  // [2026-10-29] A republish of an already-signed proposal (wasSigned)
+  // also clears payment_marked_paid_at, same reasoning as why it forces
+  // a fresh signature: the client's "I paid" claim was against the old
+  // terms, and republishing a brand-new (never-signed) proposal has
+  // nothing to clear in the first place.
   await db
-    .prepare(`UPDATE proposals SET status = ?, current_version = ?, updated_at = ? WHERE id = ?`)
+    .prepare(
+      wasSigned
+        ? `UPDATE proposals SET status = ?, current_version = ?, payment_marked_paid_at = NULL, updated_at = ? WHERE id = ?`
+        : `UPDATE proposals SET status = ?, current_version = ?, updated_at = ? WHERE id = ?`
+    )
     .bind(newStatus, versionNumber, now, proposalId)
     .run();
 
