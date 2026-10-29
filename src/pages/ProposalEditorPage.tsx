@@ -221,10 +221,15 @@ export default function ProposalEditorPage() {
         <div className="mt-3 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900">
           <p className="font-semibold">Standalone proposal, no client yet.</p>
           <p className="mt-1">
-            {proposal.prospectFullName} &middot; {proposal.prospectBusinessName} &middot; {proposal.prospectEmail}
+            {proposal.prospectFullName} &middot; {proposal.prospectBusinessName}
+            {proposal.prospectEmail ? ` · ${proposal.prospectEmail}` : ""}
             {proposal.prospectPhone ? ` · ${proposal.prospectPhone}` : ""}
           </p>
-          <p className="mt-1 text-blue-700">A real client record is created automatically from this info the moment the prospect signs.</p>
+          <p className="mt-1 text-blue-700">
+            {proposal.prospectEmail
+              ? "A real client record is created automatically from this info the moment the prospect signs."
+              : "No email was collected for this prospect, so no client record will be created when they sign -- this proposal stays unlinked."}
+          </p>
         </div>
       )}
 
@@ -383,12 +388,18 @@ export default function ProposalEditorPage() {
           // every questionnaire belongs to a client (CLAUDE.md §25/§26)
           // -- there is nothing valid to link here until this prospect
           // becomes a real client (manually, for a lead, or
-          // automatically on signing, for a standalone proposal).
+          // automatically on signing, for a standalone proposal -- but
+          // [2026-10-29] only if an email was collected; email is now
+          // optional at creation, and sign.ts can't auto-create a
+          // client without one, so this copy has to branch on that too,
+          // not just on lead vs. standalone).
           <Card title="Send to Questionnaire After Signing">
             <p className="text-xs text-ink/50">
               {proposal.leadId
                 ? "This proposal isn't attached to a client yet, so it can't be linked to a questionnaire. Convert this lead to a client first if you need that."
-                : "This proposal isn't attached to a client yet, so it can't be linked to a questionnaire. Once the prospect signs, a client is created automatically and you can link one then."}
+                : proposal.prospectEmail
+                  ? "This proposal isn't attached to a client yet, so it can't be linked to a questionnaire. Once the prospect signs, a client is created automatically and you can link one then."
+                  : "This proposal isn't attached to a client yet, so it can't be linked to a questionnaire. No email was collected for this prospect, so signing won't create a client either -- create one manually afterward if you need to link a questionnaire."}
             </p>
           </Card>
         )}

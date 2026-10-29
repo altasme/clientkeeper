@@ -13,10 +13,21 @@
 // stored on the proposal's own prospect_* columns and is read by
 // altaventureswebsite's public sign endpoint
 // (functions/api/public/proposal/[slug]/sign.ts) to auto-create a real
-// `clients` row the moment this specific proposal is signed. Email/full
-// name/business name are required here precisely because the `clients`
-// table requires all three -- collecting them upfront is what makes that
-// later auto-creation possible at all.
+// `clients` row the moment this specific proposal is signed.
+//
+// [2026-10-29] Email is optional, per the operator's direct request --
+// full name and business name stay required (there's no proposal
+// without a "who is this for"), but not every prospect has a verified
+// email on hand yet. The real, documented consequence: the `clients`
+// table requires email NOT NULL (clienthub's d1/schema.sql), and
+// sign.ts's auto-create-client logic already only fires when email is
+// present (it was already written defensively this way before this
+// change). So a proposal created without an email still signs fine --
+// it just never auto-creates a client record. Staff can add the email
+// later by discarding this proposal and creating a fresh one with it
+// filled in (there's no PATCH for prospect_* fields -- see sign.ts's own
+// comment on why), or by creating the client manually once the real
+// email is known.
 
 import { generateUniqueSlugAndToken } from "../../../_lib/publicDocs";
 import type { StaffUser } from "../../../_lib/roles";
@@ -45,12 +56,16 @@ export const onRequestPost: PagesFunction<Env, never, { staffUser: StaffUser }> 
 
   const prospectFullName = typeof b.prospectFullName === "string" ? b.prospectFullName.trim() : "";
   const prospectBusinessName = typeof b.prospectBusinessName === "string" ? b.prospectBusinessName.trim() : "";
-  const prospectEmail = typeof b.prospectEmail === "string" ? b.prospectEmail.trim() : "";
+  const prospectEmailRaw = typeof b.prospectEmail === "string" ? b.prospectEmail.trim() : "";
   const prospectPhone = typeof b.prospectPhone === "string" && b.prospectPhone.trim() ? b.prospectPhone.trim() : null;
 
   if (!prospectFullName) return jsonResponse(400, { error: "The prospect's name is required." });
   if (!prospectBusinessName) return jsonResponse(400, { error: "The prospect's business name is required." });
-  if (!prospectEmail || !EMAIL_RE.test(prospectEmail)) return jsonResponse(400, { error: "A valid email is required -- it's what lets us create a client record once this is signed." });
+  // Email is optional (see the header comment above), but if one IS
+  // given it still has to be a real address -- a garbled value stored
+  // now would otherwise silently become a garbled `clients.email` later.
+  if (prospectEmailRaw && !EMAIL_RE.test(prospectEmailRaw)) return jsonResponse(400, { error: "That doesn't look like a valid email -- leave it blank if you don't have one yet." });
+  const prospectEmail = prospectEmailRaw || null;
 
   const title = typeof b.title === "string" && b.title.trim() ? b.title.trim() : `Proposal for ${prospectBusinessName}`;
 
