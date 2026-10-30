@@ -25,7 +25,7 @@ const PROPOSAL_STATUS_STYLES: Record<string, string> = {
 
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-xl border border-ink/10 bg-white p-5">
+    <div className="min-w-0 rounded-xl border border-ink/10 bg-white p-5">
       <h2 className="text-sm font-bold uppercase tracking-wide text-ink/50">{title}</h2>
       <div className="mt-3">{children}</div>
     </div>

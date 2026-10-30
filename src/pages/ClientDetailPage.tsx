@@ -77,7 +77,7 @@ const POST_PRESENTATION_OR_LATER: Stage[] = ["post_presentation", "offer_unlocke
 
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-xl border border-ink/10 bg-white p-5">
+    <div className="min-w-0 rounded-xl border border-ink/10 bg-white p-5">
       <h2 className="text-sm font-bold uppercase tracking-wide text-ink/50">{title}</h2>
       <div className="mt-3">{children}</div>
     </div>
@@ -644,13 +644,13 @@ function WebsiteUrlField({
           placeholder="https://yourbusiness.com"
           value={local}
           onChange={(e) => setLocal(e.target.value)}
-          className="flex-1 rounded border border-ink/15 px-2 py-1.5 text-xs"
+          className="min-w-0 flex-1 rounded border border-ink/15 px-2 py-1.5 text-xs"
         />
         <button
           type="button"
           disabled={busy}
           onClick={() => onSave(local.trim())}
-          className="rounded-full bg-brand-blue px-3 py-1 text-xs font-semibold text-white hover:bg-[#0b57cc] disabled:opacity-50"
+          className="shrink-0 rounded-full bg-brand-blue px-3 py-1 text-xs font-semibold text-white hover:bg-[#0b57cc] disabled:opacity-50"
         >
           Save
         </button>
@@ -701,7 +701,11 @@ function PlanBlock({
       )}
 
       <div className="mt-3 flex gap-2">
-        <select value={selected} onChange={(e) => setSelected(e.target.value)} className="flex-1 rounded border border-ink/15 px-2 py-1.5 text-xs">
+        <select
+          value={selected}
+          onChange={(e) => setSelected(e.target.value)}
+          className="min-w-0 flex-1 rounded border border-ink/15 px-2 py-1.5 text-xs"
+        >
           {PLAN_OPTIONS.map((p) => (
             <option key={p.id} value={p.id}>
               {p.name}
@@ -712,7 +716,7 @@ function PlanBlock({
           type="button"
           disabled={busy}
           onClick={() => onSetPlan(selected)}
-          className="rounded-full border border-brand-blue px-3 py-1 text-xs font-semibold text-brand-blue hover:bg-brand-blue hover:text-white disabled:opacity-50"
+          className="shrink-0 rounded-full border border-brand-blue px-3 py-1 text-xs font-semibold text-brand-blue hover:bg-brand-blue hover:text-white disabled:opacity-50"
         >
           Set Plan
         </button>
@@ -872,13 +876,13 @@ function MeetingLinkField({
         placeholder="Meeting link (client-visible)"
         value={local}
         onChange={(e) => setLocal(e.target.value)}
-        className="flex-1 rounded border border-ink/15 px-2 py-1.5 text-xs"
+        className="min-w-0 flex-1 rounded border border-ink/15 px-2 py-1.5 text-xs"
       />
       <button
         type="button"
         disabled={busy}
         onClick={() => onSave(local.trim())}
-        className="rounded-full bg-brand-blue px-3 py-1 text-xs font-semibold text-white hover:bg-[#0b57cc] disabled:opacity-50"
+        className="shrink-0 rounded-full bg-brand-blue px-3 py-1 text-xs font-semibold text-white hover:bg-[#0b57cc] disabled:opacity-50"
       >
         Save Link
       </button>
@@ -895,13 +899,13 @@ function RescheduleField({ busy, onReschedule }: { busy: boolean; onReschedule: 
         type="datetime-local"
         value={value}
         onChange={(e) => setValue(e.target.value)}
-        className="flex-1 rounded border border-ink/15 px-2 py-1.5 text-xs"
+        className="min-w-0 flex-1 rounded border border-ink/15 px-2 py-1.5 text-xs"
       />
       <button
         type="button"
         disabled={busy || !value}
         onClick={() => onReschedule(new Date(value).toISOString())}
-        className="rounded-full border border-brand-blue px-3 py-1 text-xs font-semibold text-brand-blue hover:bg-brand-blue hover:text-white disabled:opacity-50"
+        className="shrink-0 rounded-full border border-brand-blue px-3 py-1 text-xs font-semibold text-brand-blue hover:bg-brand-blue hover:text-white disabled:opacity-50"
       >
         Reschedule
       </button>
@@ -1110,7 +1114,7 @@ function ActivityBlock({
           placeholder="Add a note&hellip;"
           value={note}
           onChange={(e) => setNote(e.target.value)}
-          className="flex-1 rounded border border-ink/15 px-2 py-1.5 text-xs"
+          className="min-w-0 flex-1 rounded border border-ink/15 px-2 py-1.5 text-xs"
         />
         <button
           type="button"
@@ -1119,7 +1123,7 @@ function ActivityBlock({
             onAdd(note.trim());
             setNote("");
           }}
-          className="rounded-full bg-brand-blue px-3 py-1 text-xs font-semibold text-white hover:bg-[#0b57cc] disabled:opacity-50"
+          className="shrink-0 rounded-full bg-brand-blue px-3 py-1 text-xs font-semibold text-white hover:bg-[#0b57cc] disabled:opacity-50"
         >
           Add
         </button>

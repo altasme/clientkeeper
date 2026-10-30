@@ -16,7 +16,7 @@ import { useMe } from "../lib/MeContext";
 
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-xl border border-ink/10 bg-white p-5">
+    <div className="min-w-0 rounded-xl border border-ink/10 bg-white p-5">
       <h2 className="text-sm font-bold uppercase tracking-wide text-ink/50">{title}</h2>
       <div className="mt-3">{children}</div>
     </div>
@@ -291,7 +291,7 @@ export default function MyCafeClientDetailPage() {
               placeholder="Add a note&hellip;"
               value={note}
               onChange={(e) => setNote(e.target.value)}
-              className="flex-1 rounded border border-ink/15 px-2 py-1.5 text-xs"
+              className="min-w-0 flex-1 rounded border border-ink/15 px-2 py-1.5 text-xs"
             />
             <button
               type="button"
@@ -301,7 +301,7 @@ export default function MyCafeClientDetailPage() {
                 run(() => addClientActivity(id, note.trim()));
                 setNote("");
               }}
-              className="rounded-full bg-brand-blue px-3 py-1 text-xs font-semibold text-white hover:bg-[#0b57cc] disabled:opacity-50"
+              className="shrink-0 rounded-full bg-brand-blue px-3 py-1 text-xs font-semibold text-white hover:bg-[#0b57cc] disabled:opacity-50"
             >
               Add
             </button>
