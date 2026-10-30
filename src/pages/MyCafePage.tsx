@@ -144,7 +144,7 @@ export default function MyCafePage() {
           placeholder="Search owner, business, or email"
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          className="w-72 rounded-lg border border-ink/15 px-3 py-2 text-sm outline-none focus:border-brand-blue"
+          className="w-full sm:w-72 rounded-lg border border-ink/15 px-3 py-2 text-sm outline-none focus:border-brand-blue"
         />
         <select
           value={status}

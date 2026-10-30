@@ -243,7 +243,7 @@ export default function LeadsPage() {
           placeholder="Search name, business, or email"
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          className="w-72 rounded-lg border border-ink/15 px-3 py-2 text-sm outline-none focus:border-brand-blue"
+          className="w-full sm:w-72 rounded-lg border border-ink/15 px-3 py-2 text-sm outline-none focus:border-brand-blue"
         />
         <select value={status} onChange={(e) => setStatus(e.target.value)} className="rounded-lg border border-ink/15 px-3 py-2 text-sm">
           <option value="">All statuses</option>
@@ -327,7 +327,7 @@ export default function LeadsPage() {
           placeholder="Search name, business, or email"
           value={proposalsQ}
           onChange={(e) => setProposalsQ(e.target.value)}
-          className="w-72 rounded-lg border border-ink/15 px-3 py-2 text-sm outline-none focus:border-brand-blue"
+          className="w-full sm:w-72 rounded-lg border border-ink/15 px-3 py-2 text-sm outline-none focus:border-brand-blue"
         />
         <select value={proposalsStatus} onChange={(e) => setProposalsStatus(e.target.value)} className="rounded-lg border border-ink/15 px-3 py-2 text-sm">
           <option value="">All statuses</option>

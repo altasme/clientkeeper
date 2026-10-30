@@ -37,7 +37,7 @@ const NEEDS_OPTIONS: QuestionFieldType[] = ["single_choice", "multi_choice", "dr
 
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-xl border border-ink/10 bg-white p-5">
+    <div className="min-w-0 rounded-xl border border-ink/10 bg-white p-5">
       <h2 className="text-sm font-bold uppercase tracking-wide text-ink/50">{title}</h2>
       <div className="mt-3">{children}</div>
     </div>
@@ -195,7 +195,7 @@ export default function QuestionnaireEditorPage() {
         <input
           value={title}
           onChange={(e) => setTitle(e.target.value)}
-          className="w-full rounded-lg border border-transparent bg-transparent text-2xl font-bold text-brand-navy outline-none focus:border-ink/15 focus:bg-white"
+          className="min-w-0 flex-1 rounded-lg border border-transparent bg-transparent text-2xl font-bold text-brand-navy outline-none focus:border-ink/15 focus:bg-white"
         />
         <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-bold uppercase tracking-wide ${STATUS_STYLES[detail.status]}`}>{detail.status}</span>
       </div>
@@ -250,7 +250,7 @@ export default function QuestionnaireEditorPage() {
             {questions.map((q, i) => (
               <div key={q.id} className="rounded-lg border border-ink/10 p-4">
                 <div className="flex items-start justify-between gap-2">
-                  <div className="grid flex-1 gap-2 sm:grid-cols-2">
+                  <div className="grid min-w-0 flex-1 gap-2 sm:grid-cols-2">
                     <input
                       value={q.sectionHeading ?? ""}
                       onChange={(e) => updateQuestion(i, { sectionHeading: e.target.value || null })}
