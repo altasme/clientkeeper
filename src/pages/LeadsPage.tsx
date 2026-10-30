@@ -1,8 +1,27 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { fetchLeads, updateLead, createLead, createStandaloneProposal, type Lead } from "../lib/api";
+import {
+  fetchLeads,
+  updateLead,
+  createLead,
+  createStandaloneProposal,
+  fetchStandaloneProposals,
+  type Lead,
+  type StandaloneProposalRow,
+  type ProposalStatus,
+} from "../lib/api";
 
 const STATUS_OPTIONS: Lead["status"][] = ["new", "contacted", "qualified", "converted", "lost"];
+const PROPOSAL_STATUS_OPTIONS: ProposalStatus[] = ["draft", "published", "sent", "signed", "declined", "expired", "revoked"];
+const PROPOSAL_STATUS_STYLES: Record<ProposalStatus, string> = {
+  draft: "bg-ink/10 text-ink/60",
+  published: "bg-blue-100 text-blue-700",
+  sent: "bg-blue-100 text-blue-700",
+  signed: "bg-green-100 text-green-700",
+  declined: "bg-red-100 text-red-700",
+  expired: "bg-ink/10 text-ink/60",
+  revoked: "bg-red-100 text-red-700",
+};
 
 // [2026-10-15] A minimal "add lead" form -- this page previously had no
 // way to create a lead at all (every existing row arrived from a
@@ -170,6 +189,18 @@ export default function LeadsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // [2026-10-30] Standalone proposals have their own search/filter and
+  // their own loader, kept separate from the leads one above rather
+  // than reusing `q`/`status` -- the status vocabularies don't overlap
+  // at all (lead statuses vs. proposal statuses), so one shared filter
+  // pair would mean either control silently doing nothing for the
+  // other list half the time.
+  const [proposals, setProposals] = useState<StandaloneProposalRow[]>([]);
+  const [proposalsQ, setProposalsQ] = useState("");
+  const [proposalsStatus, setProposalsStatus] = useState("");
+  const [proposalsLoading, setProposalsLoading] = useState(true);
+  const [proposalsError, setProposalsError] = useState<string | null>(null);
+
   const load = () => {
     setLoading(true);
     fetchLeads({ q: q || undefined, status: status || undefined })
@@ -178,11 +209,25 @@ export default function LeadsPage() {
       .finally(() => setLoading(false));
   };
 
+  const loadProposals = () => {
+    setProposalsLoading(true);
+    fetchStandaloneProposals({ q: proposalsQ || undefined, status: proposalsStatus || undefined })
+      .then(setProposals)
+      .catch((err) => setProposalsError(err.message))
+      .finally(() => setProposalsLoading(false));
+  };
+
   useEffect(() => {
     const handle = setTimeout(load, 250);
     return () => clearTimeout(handle);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [q, status]);
+
+  useEffect(() => {
+    const handle = setTimeout(loadProposals, 250);
+    return () => clearTimeout(handle);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [proposalsQ, proposalsStatus]);
 
   const changeStatus = async (id: string, newStatus: Lead["status"]) => {
     await updateLead(id, { status: newStatus });
@@ -257,6 +302,76 @@ export default function LeadsPage() {
               <tr>
                 <td colSpan={5} className="px-4 py-6 text-center text-ink/40">
                   No leads match.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {/* [2026-10-30] Standalone proposals (CLAUDE.md §26) previously had
+          no listing anywhere -- the "+ New Proposal" button above
+          navigates straight to the new proposal's editor on creation, so
+          without this section a staff member who didn't save that URL
+          had no way to find it again (real operator report: "I just
+          created 2 recent ones i cant see it"). This lists every
+          proposal with no client and no lead; once one gets a client
+          (auto-created on signing, or linked manually), it moves to
+          showing on that client's own detail page instead and drops out
+          of this list, which is the correct, intended handoff. */}
+      <h2 className="mt-10 text-lg font-bold text-brand-navy">Standalone Proposals</h2>
+      <p className="mt-1 text-xs text-ink/50">Proposals created without a lead or client. Once signed with an email on file, a real client is created and the proposal moves there instead.</p>
+      <div className="mt-3 flex flex-wrap items-center gap-3">
+        <input
+          type="text"
+          placeholder="Search name, business, or email"
+          value={proposalsQ}
+          onChange={(e) => setProposalsQ(e.target.value)}
+          className="w-72 rounded-lg border border-ink/15 px-3 py-2 text-sm outline-none focus:border-brand-blue"
+        />
+        <select value={proposalsStatus} onChange={(e) => setProposalsStatus(e.target.value)} className="rounded-lg border border-ink/15 px-3 py-2 text-sm">
+          <option value="">All statuses</option>
+          {PROPOSAL_STATUS_OPTIONS.map((s) => (
+            <option key={s} value={s}>
+              {s}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {proposalsError && <p className="mt-4 text-sm text-red-600">{proposalsError}</p>}
+
+      <div className="mt-4 overflow-x-auto rounded-xl border border-ink/10 bg-white">
+        <table className="w-full text-left text-sm">
+          <thead className="border-b border-ink/10 text-xs uppercase tracking-wide text-ink/40">
+            <tr>
+              <th className="px-4 py-3">Prospect</th>
+              <th className="px-4 py-3">Business</th>
+              <th className="px-4 py-3">Contact</th>
+              <th className="px-4 py-3">Status</th>
+              <th className="px-4 py-3">Created</th>
+            </tr>
+          </thead>
+          <tbody>
+            {proposals.map((p) => (
+              <tr key={p.id} className="border-b border-ink/5 last:border-0 hover:bg-paper-alt">
+                <td className="px-4 py-3 font-semibold text-ink">
+                  <Link to={`/proposals/${p.id}`} className="text-brand-navy hover:underline">
+                    {p.prospect_full_name || "—"}
+                  </Link>
+                </td>
+                <td className="px-4 py-3 text-ink/70">{p.prospect_business_name || "—"}</td>
+                <td className="px-4 py-3 text-ink/70">{p.prospect_email || p.prospect_phone || "—"}</td>
+                <td className="px-4 py-3">
+                  <span className={`rounded-full px-2 py-1 text-xs font-bold uppercase tracking-wide ${PROPOSAL_STATUS_STYLES[p.status]}`}>{p.status}</span>
+                </td>
+                <td className="px-4 py-3 text-ink/50">{new Date(p.created_at).toLocaleDateString()}</td>
+              </tr>
+            ))}
+            {!proposalsLoading && proposals.length === 0 && (
+              <tr>
+                <td colSpan={5} className="px-4 py-6 text-center text-ink/40">
+                  No standalone proposals match.
                 </td>
               </tr>
             )}
