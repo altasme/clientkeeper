@@ -42,6 +42,52 @@ function jsonResponse(status: number, body: unknown): Response {
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+// [2026-10-30] GET /api/app/proposals -- lists standalone proposals
+// (client_id AND lead_id both NULL) only. Before this existed, a
+// standalone proposal had genuinely no listing UI anywhere: it was
+// reachable only via the one-time redirect URL right after creation,
+// so a staff member who navigated away without saving that link had no
+// way to find it again (the operator's own report: "I just created 2
+// recent ones i cant see it" -- real content, not actually lost, just
+// unlistable). Scoped to client_id IS NULL AND lead_id IS NULL
+// deliberately: a client- or lead-backed proposal already has a real
+// home (its parent's detail page lists it via GET
+// /api/app/{clients,leads}/:id/proposals), so including those here
+// too would just duplicate that listing under a second, inconsistent
+// one. Same q/status filtering shape as GET /api/app/leads, with
+// `status` matching the real `proposals.status` values.
+export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
+  if (!env.DB) return jsonResponse(500, { error: "Not configured" });
+  const db = env.DB;
+
+  const url = new URL(request.url);
+  const q = url.searchParams.get("q")?.trim();
+  const status = url.searchParams.get("status")?.trim();
+
+  const conditions: string[] = ["client_id IS NULL", "lead_id IS NULL"];
+  const params: unknown[] = [];
+
+  if (q) {
+    conditions.push(`(prospect_full_name LIKE ? OR prospect_business_name LIKE ? OR prospect_email LIKE ?)`);
+    const like = `%${q}%`;
+    params.push(like, like, like);
+  }
+  if (status) {
+    conditions.push(`status = ?`);
+    params.push(status);
+  }
+
+  const result = await db
+    .prepare(
+      `SELECT id, slug, access_token, title, status, prospect_full_name, prospect_business_name, prospect_email, prospect_phone, created_at, updated_at
+       FROM proposals WHERE ${conditions.join(" AND ")} ORDER BY created_at DESC LIMIT 200`
+    )
+    .bind(...params)
+    .all();
+
+  return jsonResponse(200, result.results);
+};
+
 export const onRequestPost: PagesFunction<Env, never, { staffUser: StaffUser }> = async ({ request, env, data }) => {
   if (!env.DB) return jsonResponse(500, { error: "Not configured" });
   const db = env.DB;

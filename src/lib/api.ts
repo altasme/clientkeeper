@@ -757,6 +757,33 @@ export function createLeadProposal(leadId: string, title?: string): Promise<{ id
   return apiFetch(`/api/app/leads/${leadId}/proposals`, { method: "POST", body: JSON.stringify({ title }) });
 }
 
+// [2026-10-30] A standalone proposal's own listing row (GET
+// /api/app/proposals) -- deliberately a separate, flatter shape from
+// ProposalDetail/ProposalListRow (whichever of those exist for the
+// client-/lead-scoped listings), since this is the one place that
+// needs prospect_* fields directly rather than a resolved client/lead.
+export interface StandaloneProposalRow {
+  id: string;
+  slug: string;
+  access_token: string;
+  title: string;
+  status: ProposalStatus;
+  prospect_full_name: string | null;
+  prospect_business_name: string | null;
+  prospect_email: string | null;
+  prospect_phone: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export function fetchStandaloneProposals(query: { q?: string; status?: string } = {}): Promise<StandaloneProposalRow[]> {
+  const params = new URLSearchParams();
+  if (query.q) params.set("q", query.q);
+  if (query.status) params.set("status", query.status);
+  const qs = params.toString();
+  return apiFetch(`/api/app/proposals${qs ? `?${qs}` : ""}`);
+}
+
 // [2026-10-16] A proposal with no parent at all (CLAUDE.md §26: "create a
 // proposal even outside of a lead or client"). The prospect's contact
 // info is collected here, at creation, since it's what altaventureswebsite's
