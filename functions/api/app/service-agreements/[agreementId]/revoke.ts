@@ -25,19 +25,17 @@ export const onRequestPost: PagesFunction<Env, "agreementId", { staffUser: Staff
   const db = env.DB;
   const agreementId = normalizeParam(params.agreementId);
 
-  const agreement = await db.prepare(`SELECT id, client_id, title, status FROM service_agreements WHERE id = ?`).bind(agreementId).first<{ id: string; client_id: string | null; title: string; status: string }>();
+  const agreement = await db.prepare(`SELECT id, client_id, title, status FROM service_agreements WHERE id = ?`).bind(agreementId).first<{ id: string; client_id: string; title: string; status: string }>();
   if (!agreement) return jsonResponse(404, { error: "Service agreement not found" });
   if (agreement.status === "revoked") return jsonResponse(409, { error: "Already revoked." });
 
   const now = new Date().toISOString();
   await db.prepare(`UPDATE service_agreements SET status = 'revoked', updated_at = ? WHERE id = ?`).bind(now, agreementId).run();
 
-  if (agreement.client_id) {
-    await db
-      .prepare(`INSERT INTO client_activity (id, client_id, type, description, actor_id, created_at) VALUES (?, ?, 'service_agreement_revoked', ?, ?, ?)`)
-      .bind(crypto.randomUUID(), agreement.client_id, `Service agreement "${agreement.title}" link revoked`, data.staffUser.id, now)
-      .run();
-  }
+  await db
+    .prepare(`INSERT INTO client_activity (id, client_id, type, description, actor_id, created_at) VALUES (?, ?, 'service_agreement_revoked', ?, ?, ?)`)
+    .bind(crypto.randomUUID(), agreement.client_id, `Service agreement "${agreement.title}" link revoked`, data.staffUser.id, now)
+    .run();
 
   await db
     .prepare(`INSERT INTO audit_log (id, actor_id, action, entity_type, entity_id, before, after, reason, created_at) VALUES (?, ?, 'service_agreement_revoked', 'service_agreement', ?, ?, ?, NULL, ?)`)

@@ -1,9 +1,10 @@
 // Service Agreement Generator editor (CLAUDE.md §29) -- a direct clone
 // of ProposalEditorPage.tsx, minus the "Payment Request" card (no
-// payment step, the operator's own confirmed decision) and minus the
+// payment step, the operator's own confirmed decision), minus the
 // "Send to Questionnaire After Signing" card (an intake-questionnaire
 // concept that belongs to the proposal that precedes a contract, not
-// the contract itself).
+// the contract itself), and minus the lead/standalone branches entirely
+// (CLAUDE.md §30: a service agreement always belongs to a real client).
 
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
@@ -168,40 +169,11 @@ export default function ServiceAgreementEditorPage() {
 
   return (
     <div className="max-w-3xl">
-      {agreement.clientId ? (
-        <Link to={`/clients/${agreement.clientId}`} className="text-xs font-semibold text-ink/50 hover:text-ink">
-          &larr; Back to client
-        </Link>
-      ) : agreement.leadId ? (
-        <Link to={`/leads/${agreement.leadId}`} className="text-xs font-semibold text-ink/50 hover:text-ink">
-          &larr; Back to lead
-        </Link>
-      ) : (
-        <Link to="/leads" className="text-xs font-semibold text-ink/50 hover:text-ink">
-          &larr; Back to leads
-        </Link>
-      )}
-
-      {!agreement.clientId && !agreement.leadId && (
-        // A standalone agreement has no lead or client to show a "back
-        // to..." link for -- this banner is what tells staff where the
-        // prospect info it was created with actually went, and what
-        // happens to it on signing. Same as ProposalEditorPage's
-        // identical banner.
-        <div className="mt-3 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900">
-          <p className="font-semibold">Standalone service agreement, no client yet.</p>
-          <p className="mt-1">
-            {agreement.prospectFullName} &middot; {agreement.prospectBusinessName}
-            {agreement.prospectEmail ? ` · ${agreement.prospectEmail}` : ""}
-            {agreement.prospectPhone ? ` · ${agreement.prospectPhone}` : ""}
-          </p>
-          <p className="mt-1 text-blue-700">
-            {agreement.prospectEmail
-              ? "A real client record is created automatically from this info the moment the prospect signs."
-              : "No email was collected for this prospect, so no client record will be created when they sign -- this agreement stays unlinked."}
-          </p>
-        </div>
-      )}
+      {/* A service agreement always belongs to a real client (CLAUDE.md
+          §30), unlike a proposal -- no lead/standalone branch here. */}
+      <Link to={`/clients/${agreement.clientId}`} className="text-xs font-semibold text-ink/50 hover:text-ink">
+        &larr; Back to client
+      </Link>
 
       <div className="mt-2 flex items-start justify-between gap-3">
         <input

@@ -3,13 +3,16 @@
 // Service Agreement Generator (CLAUDE.md §29), cloned from the
 // proposal generator's own flattened detail endpoint
 // (functions/api/app/proposals/[proposalId].ts) -- resolved by its own
-// id alone, since it can belong to a client, a lead, or neither
-// (standalone), same as a proposal. No payment_* fields and no
-// questionnaire_id here, unlike proposals: this is a signature-only
-// document per the operator's own confirmed decision, and sending a
-// signer to an intake questionnaire after accepting is a sales-funnel
-// concept that belongs to the proposal that precedes a contract, not
-// the contract itself.
+// id alone for consistency with that pattern, even though (unlike a
+// proposal) a service agreement always belongs to exactly one real
+// client (CLAUDE.md §30: "must be linked to specific CLIENTS" --
+// corrected from the first version of this feature, which wrongly
+// copied the proposal generator's lead/standalone flexibility onto a
+// binding contract). No payment_* fields and no questionnaire_id here,
+// unlike proposals: this is a signature-only document per the
+// operator's own confirmed decision, and sending a signer to an intake
+// questionnaire after accepting is a sales-funnel concept that belongs
+// to the proposal that precedes a contract, not the contract itself.
 //
 // GET returns full detail for the editor/detail page: the live draft
 // buffer (title/content_html), every published version (read-only,
@@ -36,12 +39,7 @@ function normalizeParam(value: string | string[]): string {
 
 interface ServiceAgreementRow {
   id: string;
-  client_id: string | null;
-  lead_id: string | null;
-  prospect_full_name: string | null;
-  prospect_business_name: string | null;
-  prospect_email: string | null;
-  prospect_phone: string | null;
+  client_id: string;
   slug: string;
   access_token: string;
   title: string;
@@ -56,7 +54,7 @@ interface ServiceAgreementRow {
 async function loadAgreement(db: D1Database, agreementId: string): Promise<ServiceAgreementRow | null> {
   return db
     .prepare(
-      `SELECT id, client_id, lead_id, prospect_full_name, prospect_business_name, prospect_email, prospect_phone, slug, access_token, title, content_html, status, current_version, expires_at, created_at, updated_at
+      `SELECT id, client_id, slug, access_token, title, content_html, status, current_version, expires_at, created_at, updated_at
        FROM service_agreements WHERE id = ?`
     )
     .bind(agreementId)
@@ -84,11 +82,6 @@ export const onRequestGet: PagesFunction<Env, "agreementId"> = async ({ env, par
   return jsonResponse(200, {
     id: agreement.id,
     clientId: agreement.client_id,
-    leadId: agreement.lead_id,
-    prospectFullName: agreement.prospect_full_name,
-    prospectBusinessName: agreement.prospect_business_name,
-    prospectEmail: agreement.prospect_email,
-    prospectPhone: agreement.prospect_phone,
     slug: agreement.slug,
     publicUrl: `https://www.altasme.com/agreement/${agreement.slug}?t=${agreement.access_token}`,
     title: agreement.title,
