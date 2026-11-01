@@ -999,3 +999,128 @@ export interface QuestionnaireResponse {
 export function fetchQuestionnaireResponses(clientId: string, questionnaireId: string): Promise<QuestionnaireResponse[]> {
   return apiFetch(`/api/app/clients/${clientId}/questionnaires/${questionnaireId}/responses`);
 }
+
+// Service Agreements
+//
+// Cloned from the Proposal Generator above (CLAUDE.md §29) -- same
+// standalone/lead/client mechanics, same public-page-on-the-marketing-
+// site architecture (www.altasme.com/agreement/:slug), minus the
+// payment-request fields and the questionnaire link, both deliberately
+// left out of this clone (signature-only, no payment step; no intake-
+// questionnaire concept for a contract).
+
+export type ServiceAgreementStatus = "draft" | "published" | "sent" | "signed" | "declined" | "expired" | "revoked";
+
+export interface ServiceAgreementListRow {
+  id: string;
+  slug: string;
+  publicUrl: string;
+  title: string;
+  status: ServiceAgreementStatus;
+  currentVersion: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export function fetchServiceAgreements(clientId: string): Promise<ServiceAgreementListRow[]> {
+  return apiFetch(`/api/app/clients/${clientId}/service-agreements`);
+}
+
+export function createServiceAgreement(clientId: string, title?: string): Promise<{ id: string; slug: string; title: string; status: ServiceAgreementStatus }> {
+  return apiFetch(`/api/app/clients/${clientId}/service-agreements`, { method: "POST", body: JSON.stringify({ title }) });
+}
+
+export function fetchLeadServiceAgreements(leadId: string): Promise<ServiceAgreementListRow[]> {
+  return apiFetch(`/api/app/leads/${leadId}/service-agreements`);
+}
+
+export function createLeadServiceAgreement(leadId: string, title?: string): Promise<{ id: string; slug: string; title: string; status: ServiceAgreementStatus }> {
+  return apiFetch(`/api/app/leads/${leadId}/service-agreements`, { method: "POST", body: JSON.stringify({ title }) });
+}
+
+export interface StandaloneServiceAgreementRow {
+  id: string;
+  slug: string;
+  access_token: string;
+  title: string;
+  status: ServiceAgreementStatus;
+  prospect_full_name: string | null;
+  prospect_business_name: string | null;
+  prospect_email: string | null;
+  prospect_phone: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export function fetchStandaloneServiceAgreements(query: { q?: string; status?: string } = {}): Promise<StandaloneServiceAgreementRow[]> {
+  const params = new URLSearchParams();
+  if (query.q) params.set("q", query.q);
+  if (query.status) params.set("status", query.status);
+  const qs = params.toString();
+  return apiFetch(`/api/app/service-agreements${qs ? `?${qs}` : ""}`);
+}
+
+export function createStandaloneServiceAgreement(fields: {
+  prospectFullName: string;
+  prospectBusinessName: string;
+  prospectEmail?: string;
+  prospectPhone?: string;
+  title?: string;
+}): Promise<{ id: string; slug: string; title: string; status: ServiceAgreementStatus }> {
+  return apiFetch(`/api/app/service-agreements`, { method: "POST", body: JSON.stringify(fields) });
+}
+
+export interface ServiceAgreementVersion {
+  id: string;
+  versionNumber: number;
+  title: string;
+  contentHtml: string;
+  createdAt: string;
+}
+
+export interface ServiceAgreementSignature {
+  id: string;
+  versionId: string;
+  signerName: string;
+  signerTitle: string | null;
+  signatureDataUrl: string;
+  ipAddress: string | null;
+  signedAt: string;
+}
+
+export interface ServiceAgreementDetail {
+  id: string;
+  clientId: string | null;
+  leadId: string | null;
+  prospectFullName: string | null;
+  prospectBusinessName: string | null;
+  prospectEmail: string | null;
+  prospectPhone: string | null;
+  slug: string;
+  publicUrl: string;
+  title: string;
+  contentHtml: string;
+  status: ServiceAgreementStatus;
+  currentVersion: number;
+  expiresAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  versions: ServiceAgreementVersion[];
+  signature: ServiceAgreementSignature | null;
+}
+
+export function fetchServiceAgreementDetail(agreementId: string): Promise<ServiceAgreementDetail> {
+  return apiFetch(`/api/app/service-agreements/${agreementId}`);
+}
+
+export function updateServiceAgreementDraft(agreementId: string, fields: { title?: string; contentHtml?: string }): Promise<{ ok: true; updatedAt: string }> {
+  return apiFetch(`/api/app/service-agreements/${agreementId}`, { method: "PATCH", body: JSON.stringify(fields) });
+}
+
+export function publishServiceAgreement(agreementId: string): Promise<{ status: ServiceAgreementStatus; versionNumber: number }> {
+  return apiFetch(`/api/app/service-agreements/${agreementId}/publish`, { method: "POST" });
+}
+
+export function revokeServiceAgreement(agreementId: string): Promise<{ ok: true }> {
+  return apiFetch(`/api/app/service-agreements/${agreementId}/revoke`, { method: "POST" });
+}

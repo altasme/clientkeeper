@@ -18,6 +18,7 @@ import SettingsPage from "./pages/SettingsPage";
 import MyCafePage from "./pages/MyCafePage";
 import MyCafeClientDetailPage from "./pages/MyCafeClientDetailPage";
 import ProposalEditorPage from "./pages/ProposalEditorPage";
+import ServiceAgreementEditorPage from "./pages/ServiceAgreementEditorPage";
 import QuestionnaireEditorPage from "./pages/QuestionnaireEditorPage";
 
 function App() {
@@ -32,6 +33,8 @@ function App() {
           <Route path="/clients/:id" element={<ClientDetailPage />} />
           {/* [2026-10-15] Flat -- a proposal can belong to a client or a lead now (CLAUDE.md §25), so it's no longer nested under one parent's path. */}
           <Route path="/proposals/:proposalId" element={<ProposalEditorPage />} />
+          {/* [2026-10-30] Same flat shape, CLAUDE.md §29 -- a service agreement can belong to a client, a lead, or neither. */}
+          <Route path="/service-agreements/:agreementId" element={<ServiceAgreementEditorPage />} />
           <Route path="/clients/:clientId/questionnaires/:questionnaireId" element={<QuestionnaireEditorPage />} />
           <Route path="/projects" element={<ProjectsPage />} />
           <Route path="/discovery" element={<DiscoveryPage />} />
