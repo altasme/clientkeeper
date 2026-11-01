@@ -1,11 +1,13 @@
-// Shared slug + access-token helpers for proposals and questionnaires
-// (CLAUDEproposalquestionnaire.md). Mirrors bills' own short-token
-// pattern (functions/api/app/bills/index.ts) exactly -- same alphabet,
-// same length, same bias-free byte-modulo mapping, same "unguessable
-// token behind a readable path" security model, just carried as a query
-// param (?t=...) alongside a readable slug instead of being the whole
-// path, since this feature's spec explicitly asked for a client-name
-// path segment rather than an opaque one.
+// Shared slug + access-token helpers for proposals, questionnaires, and
+// service agreements (CLAUDEproposalquestionnaire.md; the Service
+// Agreement Generator is a direct clone of this same mechanism, CLAUDE.md
+// §29). Mirrors bills' own short-token pattern
+// (functions/api/app/bills/index.ts) exactly -- same alphabet, same
+// length, same bias-free byte-modulo mapping, same "unguessable token
+// behind a readable path" security model, just carried as a query param
+// (?t=...) alongside a readable slug instead of being the whole path,
+// since this feature's spec explicitly asked for a client-name path
+// segment rather than an opaque one.
 
 const TOKEN_ALPHABET = "23456789abcdefghjkmnpqrstuvwxyz";
 const TOKEN_LENGTH = 8;
@@ -26,17 +28,17 @@ export function slugify(input: string): string {
 }
 
 /**
- * Generates a unique slug + unique access token for a new proposal or
- * questionnaire. `baseText` is usually the client's business name.
- * Collisions (same base slug already taken, by this client or another)
- * get a numeric suffix (-2, -3, ...) rather than failing -- a client
- * with two proposals, or two differently-named clients that happen to
- * slugify the same, both get distinct, stable URLs, never overwriting
- * an existing record.
+ * Generates a unique slug + unique access token for a new proposal,
+ * questionnaire, or service agreement. `baseText` is usually the
+ * client's business name. Collisions (same base slug already taken, by
+ * this client or another) get a numeric suffix (-2, -3, ...) rather
+ * than failing -- a client with two proposals, or two differently-named
+ * clients that happen to slugify the same, both get distinct, stable
+ * URLs, never overwriting an existing record.
  */
 export async function generateUniqueSlugAndToken(
   db: D1Database,
-  table: "proposals" | "questionnaires",
+  table: "proposals" | "questionnaires" | "service_agreements",
   baseText: string
 ): Promise<{ slug: string; accessToken: string }> {
   const base = slugify(baseText);

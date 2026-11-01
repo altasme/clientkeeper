@@ -2,14 +2,26 @@
 // proposal has somewhere to live and be created from, the same way
 // ClientDetailPage's ProposalsBlock already works for clients
 // (CLAUDE.md §25: "a proposal generator that doesn't need a client").
-// Deliberately minimal -- just the lead's own contact fields (editable,
-// same fields LeadsPage already lets staff set inline) plus the
-// Proposals block. No projects/billing/discovery sections here, since a
-// lead has none of that yet; those only start to exist once a lead
-// converts into a real client.
+// [2026-10-30] Also hosts the Service Agreements block, the same
+// generator cloned for e-signed contracts (CLAUDE.md §29). Deliberately
+// minimal -- just the lead's own contact fields (editable, same fields
+// LeadsPage already lets staff set inline) plus the Proposals and
+// Service Agreements blocks. No projects/billing/discovery sections
+// here, since a lead has none of that yet; those only start to exist
+// once a lead converts into a real client.
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { fetchLead, updateLead, fetchLeadProposals, createLeadProposal, type Lead, type ProposalListRow } from "../lib/api";
+import {
+  fetchLead,
+  updateLead,
+  fetchLeadProposals,
+  createLeadProposal,
+  fetchLeadServiceAgreements,
+  createLeadServiceAgreement,
+  type Lead,
+  type ProposalListRow,
+  type ServiceAgreementListRow,
+} from "../lib/api";
 
 const STATUS_OPTIONS: Lead["status"][] = ["new", "contacted", "qualified", "converted", "lost"];
 
@@ -69,6 +81,51 @@ function ProposalsBlock({ leadId }: { leadId: string }) {
       )}
       <button type="button" disabled={creating} onClick={handleCreate} className="mt-3 rounded-full border border-ink/15 px-4 py-1.5 text-xs font-semibold text-brand-navy hover:border-brand-blue hover:text-brand-blue disabled:opacity-50">
         {creating ? "Creating..." : "+ New Proposal"}
+      </button>
+    </div>
+  );
+}
+
+// Service Agreement Generator (CLAUDE.md §29) -- a direct clone of
+// ProposalsBlock above, pointed at the separate service_agreements
+// table instead.
+function ServiceAgreementsBlock({ leadId }: { leadId: string }) {
+  const navigate = useNavigate();
+  const [agreements, setAgreements] = useState<ServiceAgreementListRow[]>([]);
+  const [creating, setCreating] = useState(false);
+
+  useEffect(() => {
+    fetchLeadServiceAgreements(leadId).then(setAgreements).catch(() => {});
+  }, [leadId]);
+
+  const handleCreate = async () => {
+    setCreating(true);
+    try {
+      const { id } = await createLeadServiceAgreement(leadId);
+      navigate(`/service-agreements/${id}`);
+    } catch {
+      setCreating(false);
+    }
+  };
+
+  return (
+    <div>
+      {agreements.length === 0 ? (
+        <p className="text-sm text-ink/40">No service agreements yet.</p>
+      ) : (
+        <ul className="space-y-2">
+          {agreements.map((a) => (
+            <li key={a.id} className="flex items-center justify-between rounded-lg border border-ink/10 p-3 text-sm">
+              <Link to={`/service-agreements/${a.id}`} className="font-medium text-brand-navy hover:underline">
+                {a.title}
+              </Link>
+              <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold uppercase tracking-wide ${PROPOSAL_STATUS_STYLES[a.status] ?? "bg-ink/10 text-ink/60"}`}>{a.status}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <button type="button" disabled={creating} onClick={handleCreate} className="mt-3 rounded-full border border-ink/15 px-4 py-1.5 text-xs font-semibold text-brand-navy hover:border-brand-blue hover:text-brand-blue disabled:opacity-50">
+        {creating ? "Creating..." : "+ New Service Agreement"}
       </button>
     </div>
   );
@@ -183,6 +240,10 @@ export default function LeadDetailPage() {
 
         <Card title="Proposals">
           <ProposalsBlock leadId={lead.id} />
+        </Card>
+
+        <Card title="Service Agreements">
+          <ServiceAgreementsBlock leadId={lead.id} />
         </Card>
       </div>
     </div>
