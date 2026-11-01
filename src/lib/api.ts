@@ -1002,12 +1002,16 @@ export function fetchQuestionnaireResponses(clientId: string, questionnaireId: s
 
 // Service Agreements
 //
-// Cloned from the Proposal Generator above (CLAUDE.md §29) -- same
-// standalone/lead/client mechanics, same public-page-on-the-marketing-
-// site architecture (www.altasme.com/agreement/:slug), minus the
-// payment-request fields and the questionnaire link, both deliberately
-// left out of this clone (signature-only, no payment step; no intake-
-// questionnaire concept for a contract).
+// Cloned from the Proposal Generator above (CLAUDE.md §29), minus the
+// payment-request fields and the questionnaire link (signature-only, no
+// payment step; no intake-questionnaire concept for a contract). Unlike
+// a proposal, a service agreement is a binding legal contract and must
+// always belong to a real, already-onboarded client -- CLAUDE.md §30
+// ("must be linked to specific CLIENTS"), corrected from this clone's
+// first version, which wrongly copied the proposal generator's
+// lead/standalone flexibility onto it. There is no lead-scoped or
+// standalone creation path; every service agreement is created,
+// listed, and fetched through its client.
 
 export type ServiceAgreementStatus = "draft" | "published" | "sent" | "signed" | "declined" | "expired" | "revoked";
 
@@ -1030,46 +1034,6 @@ export function createServiceAgreement(clientId: string, title?: string): Promis
   return apiFetch(`/api/app/clients/${clientId}/service-agreements`, { method: "POST", body: JSON.stringify({ title }) });
 }
 
-export function fetchLeadServiceAgreements(leadId: string): Promise<ServiceAgreementListRow[]> {
-  return apiFetch(`/api/app/leads/${leadId}/service-agreements`);
-}
-
-export function createLeadServiceAgreement(leadId: string, title?: string): Promise<{ id: string; slug: string; title: string; status: ServiceAgreementStatus }> {
-  return apiFetch(`/api/app/leads/${leadId}/service-agreements`, { method: "POST", body: JSON.stringify({ title }) });
-}
-
-export interface StandaloneServiceAgreementRow {
-  id: string;
-  slug: string;
-  access_token: string;
-  title: string;
-  status: ServiceAgreementStatus;
-  prospect_full_name: string | null;
-  prospect_business_name: string | null;
-  prospect_email: string | null;
-  prospect_phone: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-export function fetchStandaloneServiceAgreements(query: { q?: string; status?: string } = {}): Promise<StandaloneServiceAgreementRow[]> {
-  const params = new URLSearchParams();
-  if (query.q) params.set("q", query.q);
-  if (query.status) params.set("status", query.status);
-  const qs = params.toString();
-  return apiFetch(`/api/app/service-agreements${qs ? `?${qs}` : ""}`);
-}
-
-export function createStandaloneServiceAgreement(fields: {
-  prospectFullName: string;
-  prospectBusinessName: string;
-  prospectEmail?: string;
-  prospectPhone?: string;
-  title?: string;
-}): Promise<{ id: string; slug: string; title: string; status: ServiceAgreementStatus }> {
-  return apiFetch(`/api/app/service-agreements`, { method: "POST", body: JSON.stringify(fields) });
-}
-
 export interface ServiceAgreementVersion {
   id: string;
   versionNumber: number;
@@ -1090,12 +1054,7 @@ export interface ServiceAgreementSignature {
 
 export interface ServiceAgreementDetail {
   id: string;
-  clientId: string | null;
-  leadId: string | null;
-  prospectFullName: string | null;
-  prospectBusinessName: string | null;
-  prospectEmail: string | null;
-  prospectPhone: string | null;
+  clientId: string;
   slug: string;
   publicUrl: string;
   title: string;
