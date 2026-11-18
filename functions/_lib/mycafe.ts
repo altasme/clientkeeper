@@ -241,3 +241,68 @@ export function updateMyCafeAnnouncement(env: MyCafeEnv, id: string, fields: Rec
 export function deleteMyCafeAnnouncement(env: MyCafeEnv, id: string): Promise<{ deleted: boolean }> {
   return adminSend(env, "DELETE", `/admin/announcements/${encodeURIComponent(id)}`);
 }
+
+// ---- Per-café insights and account actions ---------------------------------
+// MyCafe's own admin routes (mycafe-pos-system control-plane/src/cafe-admin.ts).
+// Sales figures are aggregates only; nothing here identifies a customer or an order.
+export interface MyCafeSalesSummary {
+  cafeId: string;
+  from: string;
+  to: string;
+  days: number;
+  grossCentavos: number;
+  netCentavos: number;
+  discountCentavos: number;
+  refundCentavos: number;
+  deliveryFeeCentavos: number;
+  orderCount: number;
+  averageOrderCentavos: number;
+  paymentBreakdown: { method: string; amountCentavos: number }[];
+  topProducts: { name: string; units: number; revenueCentavos: number }[];
+  daily: { date: string; netCentavos: number; orders: number }[];
+}
+
+export interface MyCafeCafeActivity {
+  cafeId: string;
+  status: "provisioning" | "active" | "suspended";
+  suspendedAt: string | null;
+  suspendedReason: string | null;
+  lastOrderAt: string | null;
+  orders7d: number;
+  orders30d: number;
+  lastDeviceUseAt: string | null;
+  openShifts: number;
+  activeStaff: number;
+  billing: { id: string; kind: string; amountCentavos: number; reference: string | null; createdAt: string }[];
+  actions: { action: string; reason: string | null; actor: string | null; detail: unknown; createdAt: string }[];
+}
+
+export function getMyCafeSalesSummary(env: MyCafeEnv, mycafeCafeId: string, from?: string, to?: string): Promise<MyCafeSalesSummary> {
+  const qs = new URLSearchParams();
+  if (from) qs.set("from", from);
+  if (to) qs.set("to", to);
+  const q = qs.toString();
+  return adminGet(env, `/admin/cafes/${mycafeCafeId}/sales-summary${q ? `?${q}` : ""}`);
+}
+
+export function getMyCafeActivity(env: MyCafeEnv, mycafeCafeId: string): Promise<MyCafeCafeActivity> {
+  return adminGet(env, `/admin/cafes/${mycafeCafeId}/activity`);
+}
+
+export function suspendMyCafeCafe(env: MyCafeEnv, mycafeCafeId: string, reason: string, actor: string): Promise<{ status: string }> {
+  return adminSend(env, "POST", `/admin/cafes/${mycafeCafeId}/suspend`, { reason, actor });
+}
+
+export function reactivateMyCafeCafe(env: MyCafeEnv, mycafeCafeId: string, actor: string): Promise<{ status: string }> {
+  return adminSend(env, "POST", `/admin/cafes/${mycafeCafeId}/reactivate`, { actor });
+}
+
+export function extendMyCafeTrial(
+  env: MyCafeEnv,
+  mycafeCafeId: string,
+  days: number,
+  reason: string | null,
+  actor: string,
+): Promise<{ trialEndsAt: string; daysAdded: number }> {
+  return adminSend(env, "POST", `/admin/cafes/${mycafeCafeId}/extend-trial`, { days, reason, actor });
+}

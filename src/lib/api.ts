@@ -337,6 +337,63 @@ export function deleteMyCafeAnnouncement(id: string | number): Promise<{ deleted
   return apiFetch(`/api/app/mycafe/announcements/${id}`, { method: "DELETE" });
 }
 
+// Per-café insights and account actions (live from MyCafe; see functions/_lib/mycafe.ts).
+export interface MyCafeSalesSummary {
+  cafeId: string;
+  from: string;
+  to: string;
+  days: number;
+  grossCentavos: number;
+  netCentavos: number;
+  discountCentavos: number;
+  refundCentavos: number;
+  deliveryFeeCentavos: number;
+  orderCount: number;
+  averageOrderCentavos: number;
+  paymentBreakdown: { method: string; amountCentavos: number }[];
+  topProducts: { name: string; units: number; revenueCentavos: number }[];
+  daily: { date: string; netCentavos: number; orders: number }[];
+}
+
+export interface MyCafeUsage {
+  cafeId: string;
+  status: "provisioning" | "active" | "suspended";
+  suspendedAt: string | null;
+  suspendedReason: string | null;
+  lastOrderAt: string | null;
+  orders7d: number;
+  orders30d: number;
+  lastDeviceUseAt: string | null;
+  openShifts: number;
+  activeStaff: number;
+  billing: { id: string; kind: string; amountCentavos: number; reference: string | null; createdAt: string }[];
+  actions: { action: string; reason: string | null; actor: string | null; detail: unknown; createdAt: string }[];
+}
+
+export function fetchMyCafeSales(clientId: string, from?: string, to?: string): Promise<MyCafeSalesSummary> {
+  const qs = new URLSearchParams();
+  if (from) qs.set("from", from);
+  if (to) qs.set("to", to);
+  const q = qs.toString();
+  return apiFetch(`/api/app/mycafe/clients/${clientId}/sales${q ? `?${q}` : ""}`);
+}
+
+export function fetchMyCafeUsage(clientId: string): Promise<MyCafeUsage> {
+  return apiFetch(`/api/app/mycafe/clients/${clientId}/usage`);
+}
+
+export function suspendMyCafe(clientId: string, reason: string): Promise<{ status: string }> {
+  return apiFetch(`/api/app/mycafe/clients/${clientId}/suspend`, { method: "POST", body: JSON.stringify({ reason }) });
+}
+
+export function reactivateMyCafe(clientId: string): Promise<{ status: string }> {
+  return apiFetch(`/api/app/mycafe/clients/${clientId}/reactivate`, { method: "POST", body: JSON.stringify({}) });
+}
+
+export function extendMyCafeTrial(clientId: string, days: number, reason: string): Promise<{ trialEndsAt: string; daysAdded: number }> {
+  return apiFetch(`/api/app/mycafe/clients/${clientId}/extend-trial`, { method: "POST", body: JSON.stringify({ days, reason }) });
+}
+
 export interface ClientDetail {
   client: {
     id: string;
