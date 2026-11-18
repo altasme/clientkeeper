@@ -127,13 +127,13 @@ export default function MyCafeClientDetailPage() {
 
   return (
     <div>
-      <Link to="/mycafe" className="text-xs font-semibold text-brand-blue hover:underline">
-        &larr; Back to MyCafe POS
+      <Link to="/mycafe/cafes" className="text-xs font-semibold text-mycafe hover:underline">
+        &larr; Back to cafés
       </Link>
 
-      <div className="mt-2 flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-brand-navy">{client.businessName}</h1>
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+        <div className="min-w-0">
+          <h1 className="break-words text-2xl font-bold text-mycafe-dark">{client.businessName}</h1>
           <p className="mt-1 text-sm text-ink/50">{client.fullName} &middot; {client.email}</p>
         </div>
         <span

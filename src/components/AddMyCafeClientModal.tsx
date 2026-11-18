@@ -89,7 +89,7 @@ export default function AddMyCafeClientModal({
             {duplicateClientId && (
               <>
                 {" "}
-                <Link to={`/mycafe/${duplicateClientId}`} onClick={handleClose} className="font-semibold underline">
+                <Link to={`/mycafe/cafes/${duplicateClientId}`} onClick={handleClose} className="font-semibold underline">
                   View existing client &rarr;
                 </Link>
               </>

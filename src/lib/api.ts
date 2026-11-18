@@ -282,6 +282,61 @@ export function mintMyCafeDeviceToken(clientId: string): Promise<{ deviceActivat
   return apiFetch(`/api/app/mycafe/clients/${clientId}/new-device`, { method: "POST" });
 }
 
+// MyCafe "What's New": announcements posted here appear in every MyCafe cafe's
+// Owner Panel. Stored in MyCafe's own database; this app only writes through its
+// admin API. Text is plain (shown escaped, never as HTML) plus one optional https link.
+export type AnnouncementCategory = "new_feature" | "improvement" | "fix" | "announcement" | "maintenance";
+export type AnnouncementStatus = "draft" | "published" | "archived";
+
+export interface MyCafeAnnouncement {
+  id: number;
+  title: string;
+  body: string;
+  category: AnnouncementCategory;
+  linkUrl: string | null;
+  linkLabel: string | null;
+  pinned: boolean;
+  status: AnnouncementStatus;
+  publishedAt: string | null;
+  author: string | null;
+  createdAt: string;
+  updatedAt: string;
+  // How many cafes have at least one staff member who opened it.
+  readByCafes: number;
+}
+
+export interface MyCafeAnnouncementFields {
+  title: string;
+  body: string;
+  category: AnnouncementCategory;
+  linkUrl: string | null;
+  linkLabel: string | null;
+  pinned: boolean;
+  status: AnnouncementStatus;
+}
+
+export async function fetchMyCafeAnnouncements(status?: AnnouncementStatus): Promise<MyCafeAnnouncement[]> {
+  const qs = status ? `?status=${status}` : "";
+  const result = await apiFetch<{ announcements: MyCafeAnnouncement[] }>(`/api/app/mycafe/announcements${qs}`);
+  return result.announcements;
+}
+
+export function fetchMyCafeAnnouncement(id: string | number): Promise<MyCafeAnnouncement> {
+  return apiFetch(`/api/app/mycafe/announcements/${id}`);
+}
+
+export function createMyCafeAnnouncement(fields: Partial<MyCafeAnnouncementFields>): Promise<MyCafeAnnouncement> {
+  return apiFetch(`/api/app/mycafe/announcements`, { method: "POST", body: JSON.stringify(fields) });
+}
+
+export function updateMyCafeAnnouncement(id: string | number, fields: Partial<MyCafeAnnouncementFields>): Promise<MyCafeAnnouncement> {
+  return apiFetch(`/api/app/mycafe/announcements/${id}`, { method: "PATCH", body: JSON.stringify(fields) });
+}
+
+export function deleteMyCafeAnnouncement(id: string | number): Promise<{ deleted: boolean }> {
+  return apiFetch(`/api/app/mycafe/announcements/${id}`, { method: "DELETE" });
+}
+
 export interface ClientDetail {
   client: {
     id: string;
