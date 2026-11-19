@@ -31,7 +31,7 @@ export default function MyCafeLayout() {
   return (
     <div className="min-h-screen bg-mycafe-soft/40">
       <header className="sticky top-0 z-30 bg-mycafe-dark text-white shadow-sm">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
           <div className="flex min-w-0 items-center gap-2.5">
             <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-white/15">
               <CupMark />
@@ -53,7 +53,7 @@ export default function MyCafeLayout() {
         </div>
       </header>
 
-      <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-4 sm:px-6 md:flex-row md:gap-8 md:py-8">
+      <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-4 sm:px-6 md:flex-row md:gap-8 md:py-8">
         {/* Phones: a scrollable pill row that bleeds to the screen edges. md+: a rail. */}
         <nav aria-label="MyCafe sections" className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 md:mx-0 md:w-52 md:shrink-0 md:flex-col md:gap-1 md:overflow-visible md:px-0">
           {TABS.map((tab) => (

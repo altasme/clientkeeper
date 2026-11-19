@@ -394,6 +394,46 @@ export function extendMyCafeTrial(clientId: string, days: number, reason: string
   return apiFetch(`/api/app/mycafe/clients/${clientId}/extend-trial`, { method: "POST", body: JSON.stringify({ days, reason }) });
 }
 
+// Every MyCafe café (not only those added as ClientKeeper clients), with its sales for
+// a period. Live from MyCafe; aggregates only.
+export interface MyCafeCafeRow {
+  cafeId: string;
+  // The ClientKeeper client record for this café, or null if it signed up on its own.
+  clientId: string | null;
+  businessName: string;
+  storeName: string;
+  ownerName: string;
+  ownerEmail: string;
+  status: "provisioning" | "active" | "suspended";
+  entitlementState: string | null;
+  tier: string | null;
+  trialEndsAt: string | null;
+  daysRemaining: number | null;
+  deviceCount: number;
+  activeDeviceCount: number;
+  createdAt: string;
+  netCentavos: number;
+  orderCount: number;
+  lastOrderAt: string | null;
+}
+
+export interface MyCafeAllCafes {
+  from: string;
+  to: string;
+  days: number;
+  totalNetCentavos: number;
+  totalOrders: number;
+  cafes: MyCafeCafeRow[];
+}
+
+export function fetchMyCafeCafes(days: number): Promise<MyCafeAllCafes> {
+  return apiFetch(`/api/app/mycafe/cafes?days=${days}`);
+}
+
+export function adoptMyCafeCafe(cafeId: string): Promise<{ id: string; alreadyLinked?: boolean }> {
+  return apiFetch(`/api/app/mycafe/cafes/${cafeId}/adopt`, { method: "POST", body: JSON.stringify({}) });
+}
+
 export interface ClientDetail {
   client: {
     id: string;

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
+import MyCafeAllCafesView from "../components/MyCafeAllCafes";
 import {
   fetchMyCafeClients,
   provisionMyCafeClient,
@@ -25,7 +26,7 @@ const STATUS_OPTIONS = [
 // rule MyCafe's own API follows for it — so this page's job is to surface
 // it clearly right after the call and make staff copy it before navigating
 // away, not to make it retrievable later.
-export default function MyCafePage() {
+function ClientsAndProvisioning() {
   const { staffUser } = useMe();
   const canAdminister = isMyCafeAdmin(staffUser);
 
@@ -125,8 +126,8 @@ export default function MyCafePage() {
     <div>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-mycafe-dark">Cafés</h1>
-          <p className="mt-1 text-sm text-ink/50">Cafés running MyCafe POS &mdash; a separate product line from web development clients.</p>
+          <h2 className="text-lg font-bold text-mycafe-dark">Clients &amp; provisioning</h2>
+          <p className="mt-1 text-sm text-ink/50">Clients added in ClientKeeper: add them, provision their café and issue device tokens.</p>
         </div>
         <button
           type="button"
@@ -231,6 +232,36 @@ export default function MyCafePage() {
       </div>
 
       <AddMyCafeClientModal open={addOpen} onClose={() => setAddOpen(false)} onCreated={() => { setAddOpen(false); load(); }} />
+    </div>
+  );
+}
+
+// The Cafés section: every café on MyCafe POS with its sales (default), or the
+// clients created in ClientKeeper with provisioning actions. The view is kept in the
+// URL (?view=clients) so it can be linked to.
+export default function MyCafePage() {
+  const [params, setParams] = useSearchParams();
+  const view = params.get("view") === "clients" ? "clients" : "all";
+  const tab = (value: "all" | "clients", label: string) => (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={view === value}
+      onClick={() => setParams(value === "all" ? {} : { view: value }, { replace: true })}
+      className={`whitespace-nowrap rounded-full px-4 py-2 text-sm font-semibold ${view === value ? "bg-mycafe text-white" : "border border-ink/15 bg-white text-ink/70 hover:bg-paper-alt"}`}
+    >
+      {label}
+    </button>
+  );
+  return (
+    <div>
+      <h1 className="text-2xl font-bold text-mycafe-dark">Cafés</h1>
+      <p className="mt-1 text-sm text-ink/50">Every café running MyCafe POS and how it is selling.</p>
+      <div role="tablist" aria-label="Café views" className="-mx-4 mt-4 flex gap-2 overflow-x-auto px-4 sm:mx-0 sm:px-0">
+        {tab("all", "All cafés")}
+        {tab("clients", "Clients & provisioning")}
+      </div>
+      <div className="mt-5">{view === "all" ? <MyCafeAllCafesView /> : <ClientsAndProvisioning />}</div>
     </div>
   );
 }

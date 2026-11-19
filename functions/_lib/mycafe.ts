@@ -306,3 +306,22 @@ export function extendMyCafeTrial(
 ): Promise<{ trialEndsAt: string; daysAdded: number }> {
   return adminSend(env, "POST", `/admin/cafes/${mycafeCafeId}/extend-trial`, { days, reason, actor });
 }
+
+// Every café's sales for a period in one call (MyCafe's admin-token
+// GET /admin/sales-overview). Aggregates only.
+export interface MyCafeSalesOverview {
+  from: string;
+  to: string;
+  days: number;
+  totalNetCentavos: number;
+  totalOrders: number;
+  cafes: { cafeId: string; netCentavos: number; orderCount: number; lastOrderAt: string | null }[];
+}
+
+export function getMyCafeSalesOverview(env: MyCafeEnv, from?: string, to?: string): Promise<MyCafeSalesOverview> {
+  const qs = new URLSearchParams();
+  if (from) qs.set("from", from);
+  if (to) qs.set("to", to);
+  const q = qs.toString();
+  return adminGet(env, `/admin/sales-overview${q ? `?${q}` : ""}`);
+}
