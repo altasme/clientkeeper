@@ -7,12 +7,17 @@ import {
   mintMyCafeDeviceToken,
   revokeMyCafeDevice,
   addClientActivity,
+  fetchMyCafeUsage,
   isMyCafeAdmin,
   ApiError,
   type MyCafeClientDetail,
   type MyCafeDeviceRow,
+  type MyCafeUsage,
 } from "../lib/api";
 import { useMe } from "../lib/MeContext";
+import MyCafeSalesCard from "../components/MyCafeSalesCard";
+import MyCafeUsageCard from "../components/MyCafeUsageCard";
+import MyCafeAccountActionsCard from "../components/MyCafeAccountActionsCard";
 
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -53,10 +58,14 @@ export default function MyCafeClientDetailPage() {
   const [busy, setBusy] = useState(false);
   const [tokenResult, setTokenResult] = useState<string | null>(null);
   const [note, setNote] = useState("");
+  const [usage, setUsage] = useState<MyCafeUsage | null>(null);
+  const [usageError, setUsageError] = useState<string | null>(null);
 
-  const load = useCallback(() => {
+  // `silent` refreshes in place (no full-page "Loading…"), so a success notice or the
+  // form a staff member is working in is not wiped by the refresh.
+  const load = useCallback((silent = false) => {
     if (!id) return;
-    setLoading(true);
+    if (!silent) setLoading(true);
     Promise.all([fetchMyCafeClientDetail(id), fetchMyCafeDevices(id)])
       .then(([d, dev]) => {
         setDetail(d);
@@ -69,6 +78,22 @@ export default function MyCafeClientDetailPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // Usage, billing history and suspension state: live from MyCafe, only for a café
+  // that has been provisioned.
+  const cafeId = detail?.client.mycafeCafeId ?? null;
+  const loadUsage = useCallback(() => {
+    if (!id || !cafeId) return;
+    fetchMyCafeUsage(id)
+      .then((u) => {
+        setUsage(u);
+        setUsageError(null);
+      })
+      .catch((err) => setUsageError(err instanceof ApiError ? err.message : "Could not load usage."));
+  }, [id, cafeId]);
+  useEffect(() => {
+    loadUsage();
+  }, [loadUsage]);
 
   const run = async (action: () => Promise<unknown>) => {
     if (!id) return;
@@ -127,13 +152,13 @@ export default function MyCafeClientDetailPage() {
 
   return (
     <div>
-      <Link to="/mycafe" className="text-xs font-semibold text-brand-blue hover:underline">
-        &larr; Back to MyCafe POS
+      <Link to="/mycafe/cafes" className="text-xs font-semibold text-mycafe hover:underline">
+        &larr; Back to cafés
       </Link>
 
-      <div className="mt-2 flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-brand-navy">{client.businessName}</h1>
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+        <div className="min-w-0">
+          <h1 className="break-words text-2xl font-bold text-mycafe-dark">{client.businessName}</h1>
           <p className="mt-1 text-sm text-ink/50">{client.fullName} &middot; {client.email}</p>
         </div>
         <span
@@ -149,6 +174,11 @@ export default function MyCafeClientDetailPage() {
         </span>
       </div>
 
+      {usage?.status === "suspended" && (
+        <p className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+          <strong>This café is suspended.</strong> {usage.suspendedReason}
+        </p>
+      )}
       {error && <p className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
       {tokenResult && (
         <div className="mt-4 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
@@ -160,7 +190,7 @@ export default function MyCafeClientDetailPage() {
         </div>
       )}
 
-      <div className="mt-6 grid gap-5 lg:grid-cols-2">
+      <div className="mt-6 grid grid-cols-1 gap-5 lg:grid-cols-2">
         <Card title="Account">
           <dl className="grid grid-cols-2 gap-3">
             <Field label="Owner" value={client.fullName} />
@@ -282,6 +312,19 @@ export default function MyCafeClientDetailPage() {
               </ul>
             )}
           </Card>
+        )}
+
+        {client.mycafeCafeId && id && <MyCafeSalesCard clientId={id} />}
+        {client.mycafeCafeId && <MyCafeUsageCard usage={usage} error={usageError} />}
+        {client.mycafeCafeId && id && canAdminister && (
+          <MyCafeAccountActionsCard
+            clientId={id}
+            usage={usage}
+            onChanged={() => {
+              loadUsage();
+              load(true);
+            }}
+          />
         )}
 
         <Card title="Activity">

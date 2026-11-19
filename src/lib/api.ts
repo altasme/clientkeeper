@@ -282,6 +282,118 @@ export function mintMyCafeDeviceToken(clientId: string): Promise<{ deviceActivat
   return apiFetch(`/api/app/mycafe/clients/${clientId}/new-device`, { method: "POST" });
 }
 
+// MyCafe "What's New": announcements posted here appear in every MyCafe cafe's
+// Owner Panel. Stored in MyCafe's own database; this app only writes through its
+// admin API. Text is plain (shown escaped, never as HTML) plus one optional https link.
+export type AnnouncementCategory = "new_feature" | "improvement" | "fix" | "announcement" | "maintenance";
+export type AnnouncementStatus = "draft" | "published" | "archived";
+
+export interface MyCafeAnnouncement {
+  id: number;
+  title: string;
+  body: string;
+  category: AnnouncementCategory;
+  linkUrl: string | null;
+  linkLabel: string | null;
+  pinned: boolean;
+  status: AnnouncementStatus;
+  publishedAt: string | null;
+  author: string | null;
+  createdAt: string;
+  updatedAt: string;
+  // How many cafes have at least one staff member who opened it.
+  readByCafes: number;
+}
+
+export interface MyCafeAnnouncementFields {
+  title: string;
+  body: string;
+  category: AnnouncementCategory;
+  linkUrl: string | null;
+  linkLabel: string | null;
+  pinned: boolean;
+  status: AnnouncementStatus;
+}
+
+export async function fetchMyCafeAnnouncements(status?: AnnouncementStatus): Promise<MyCafeAnnouncement[]> {
+  const qs = status ? `?status=${status}` : "";
+  const result = await apiFetch<{ announcements: MyCafeAnnouncement[] }>(`/api/app/mycafe/announcements${qs}`);
+  return result.announcements;
+}
+
+export function fetchMyCafeAnnouncement(id: string | number): Promise<MyCafeAnnouncement> {
+  return apiFetch(`/api/app/mycafe/announcements/${id}`);
+}
+
+export function createMyCafeAnnouncement(fields: Partial<MyCafeAnnouncementFields>): Promise<MyCafeAnnouncement> {
+  return apiFetch(`/api/app/mycafe/announcements`, { method: "POST", body: JSON.stringify(fields) });
+}
+
+export function updateMyCafeAnnouncement(id: string | number, fields: Partial<MyCafeAnnouncementFields>): Promise<MyCafeAnnouncement> {
+  return apiFetch(`/api/app/mycafe/announcements/${id}`, { method: "PATCH", body: JSON.stringify(fields) });
+}
+
+export function deleteMyCafeAnnouncement(id: string | number): Promise<{ deleted: boolean }> {
+  return apiFetch(`/api/app/mycafe/announcements/${id}`, { method: "DELETE" });
+}
+
+// Per-café insights and account actions (live from MyCafe; see functions/_lib/mycafe.ts).
+export interface MyCafeSalesSummary {
+  cafeId: string;
+  from: string;
+  to: string;
+  days: number;
+  grossCentavos: number;
+  netCentavos: number;
+  discountCentavos: number;
+  refundCentavos: number;
+  deliveryFeeCentavos: number;
+  orderCount: number;
+  averageOrderCentavos: number;
+  paymentBreakdown: { method: string; amountCentavos: number }[];
+  topProducts: { name: string; units: number; revenueCentavos: number }[];
+  daily: { date: string; netCentavos: number; orders: number }[];
+}
+
+export interface MyCafeUsage {
+  cafeId: string;
+  status: "provisioning" | "active" | "suspended";
+  suspendedAt: string | null;
+  suspendedReason: string | null;
+  lastOrderAt: string | null;
+  orders7d: number;
+  orders30d: number;
+  lastDeviceUseAt: string | null;
+  openShifts: number;
+  activeStaff: number;
+  billing: { id: string; kind: string; amountCentavos: number; reference: string | null; createdAt: string }[];
+  actions: { action: string; reason: string | null; actor: string | null; detail: unknown; createdAt: string }[];
+}
+
+export function fetchMyCafeSales(clientId: string, from?: string, to?: string): Promise<MyCafeSalesSummary> {
+  const qs = new URLSearchParams();
+  if (from) qs.set("from", from);
+  if (to) qs.set("to", to);
+  const q = qs.toString();
+  return apiFetch(`/api/app/mycafe/clients/${clientId}/sales${q ? `?${q}` : ""}`);
+}
+
+export function fetchMyCafeUsage(clientId: string): Promise<MyCafeUsage> {
+  return apiFetch(`/api/app/mycafe/clients/${clientId}/usage`);
+}
+
+export function suspendMyCafe(clientId: string, reason: string): Promise<{ status: string }> {
+  return apiFetch(`/api/app/mycafe/clients/${clientId}/suspend`, { method: "POST", body: JSON.stringify({ reason }) });
+}
+
+export function reactivateMyCafe(clientId: string): Promise<{ status: string }> {
+  return apiFetch(`/api/app/mycafe/clients/${clientId}/reactivate`, { method: "POST", body: JSON.stringify({}) });
+}
+
+export function extendMyCafeTrial(clientId: string, days: number, reason: string): Promise<{ trialEndsAt: string; daysAdded: number }> {
+  return apiFetch(`/api/app/mycafe/clients/${clientId}/extend-trial`, { method: "POST", body: JSON.stringify({ days, reason }) });
+}
+
 export interface ClientDetail {
   client: {
     id: string;

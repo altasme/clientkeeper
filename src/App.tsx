@@ -1,4 +1,4 @@
-import { Routes, Route } from "react-router-dom";
+import { Routes, Route, Navigate, useParams } from "react-router-dom";
 import { MeProvider } from "./lib/MeContext";
 import Layout from "./components/Layout";
 import DashboardPage from "./pages/DashboardPage";
@@ -15,11 +15,20 @@ import NewBillPage from "./pages/NewBillPage";
 import BillDetailPage from "./pages/BillDetailPage";
 import PaymentsPage from "./pages/PaymentsPage";
 import SettingsPage from "./pages/SettingsPage";
+import MyCafeLayout from "./components/MyCafeLayout";
+import MyCafeOverviewPage from "./pages/MyCafeOverviewPage";
+import MyCafeAnnouncementsPage from "./pages/MyCafeAnnouncementsPage";
+import MyCafeAnnouncementEditorPage from "./pages/MyCafeAnnouncementEditorPage";
 import MyCafePage from "./pages/MyCafePage";
 import MyCafeClientDetailPage from "./pages/MyCafeClientDetailPage";
 import ProposalEditorPage from "./pages/ProposalEditorPage";
 import ServiceAgreementEditorPage from "./pages/ServiceAgreementEditorPage";
 import QuestionnaireEditorPage from "./pages/QuestionnaireEditorPage";
+
+function LegacyMyCafeClientRedirect() {
+  const { id } = useParams();
+  return <Navigate to={`/mycafe/cafes/${id}`} replace />;
+}
 
 function App() {
   return (
@@ -44,9 +53,18 @@ function App() {
           <Route path="/billing/new" element={<NewBillPage />} />
           <Route path="/billing/:id" element={<BillDetailPage />} />
           <Route path="/payments" element={<PaymentsPage />} />
-          <Route path="/mycafe" element={<MyCafePage />} />
-          <Route path="/mycafe/:id" element={<MyCafeClientDetailPage />} />
           <Route path="/settings" element={<SettingsPage />} />
+        </Route>
+        {/* MyCafe POS has its own workspace (own shell, own navigation), separate from the web-development CRM above. */}
+        <Route element={<MyCafeLayout />}>
+          <Route path="/mycafe" element={<MyCafeOverviewPage />} />
+          <Route path="/mycafe/cafes" element={<MyCafePage />} />
+          <Route path="/mycafe/cafes/:id" element={<MyCafeClientDetailPage />} />
+          <Route path="/mycafe/announcements" element={<MyCafeAnnouncementsPage />} />
+          <Route path="/mycafe/announcements/new" element={<MyCafeAnnouncementEditorPage />} />
+          <Route path="/mycafe/announcements/:id" element={<MyCafeAnnouncementEditorPage />} />
+          {/* Old bookmark: /mycafe/<clientId> used to be the café detail page. */}
+          <Route path="/mycafe/:id" element={<LegacyMyCafeClientRedirect />} />
         </Route>
       </Routes>
     </MeProvider>
