@@ -2,10 +2,8 @@
 // The draft row is deleted and its attachments handed to the new message in
 // the same D1 transaction that records the message + send job.
 
-import { errorResponse, normalizeParam, readJsonBody } from "../../../../../_lib/mail/http";
-import { mailHandler } from "../../../../../_lib/mail/route";
-import { loadDraft } from "../../../../../_lib/mail/drafts";
-import { handleSend, jobStatusResponse } from "../../../../../_lib/mail/sendRoute";
+import { errorResponse, normalizeParam, readJsonBody, loadDraft, handleSend, jobStatusResponse } from "@altasme/webmail-kit";
+import { mailHandler } from "../../../../../_lib/mailHandler";
 
 export const onRequestPost = mailHandler<"id">(async (args) => {
   const { ctx, db, user, access } = args;

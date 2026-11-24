@@ -1,8 +1,8 @@
-// A scripted in-memory SMTP server for exercising functions/_lib/mail/smtp.ts
+// A scripted in-memory SMTP server for exercising @altasme/webmail-kit's smtp.ts
 // under Node without any network. Implements just enough of RFC 5321 to
 // drive the client through every branch.
 
-import type { SmtpConnector, SmtpSocket } from "../../functions/_lib/mail/smtp";
+import type { SmtpConnector, SmtpSocket } from "@altasme/webmail-kit/smtp";
 
 export interface FakeServerOptions {
   greeting?: string;

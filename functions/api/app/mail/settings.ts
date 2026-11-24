@@ -3,11 +3,8 @@
 // `user` = the caller's own preferences; `policy` = business-wide limits
 // (owner/admin only). Both are whitelisted/validated in config.ts.
 
-import { isMailAdmin } from "../../../_lib/mail/access";
-import { DEFAULT_USER_SETTINGS, loadPolicy, sanitizeUserSettings, validatePolicyPatch, type MailUserSettings } from "../../../_lib/mail/config";
-import { logMailEvent } from "../../../_lib/mail/events";
-import { errorResponse, jsonResponse, nowIso, readJsonBody } from "../../../_lib/mail/http";
-import { mailHandler } from "../../../_lib/mail/route";
+import { isMailAdmin, DEFAULT_USER_SETTINGS, loadPolicy, sanitizeUserSettings, validatePolicyPatch, type MailUserSettings, logMailEvent, errorResponse, jsonResponse, nowIso, readJsonBody } from "@altasme/webmail-kit";
+import { mailHandler } from "../../../_lib/mailHandler";
 
 async function loadUserSettings(db: D1Database, userId: string): Promise<MailUserSettings> {
   const row = await db.prepare(`SELECT settings_json FROM mail_user_settings WHERE user_id = ?`).bind(userId).first<{ settings_json: string }>();

@@ -3,11 +3,8 @@
 // anything that isn't failed/retry_scheduled (409), so it can never resend
 // a message the server already accepted.
 
-import { errorResponse, jsonResponse, readJsonBody } from "../../../../_lib/mail/http";
-import { logMailEvent } from "../../../../_lib/mail/events";
-import { mailHandler } from "../../../../_lib/mail/route";
-import { retrySendJob } from "../../../../_lib/mail/send";
-import { cloudflareSmtpTransport } from "../../../../_lib/mail/smtpTransport";
+import { errorResponse, jsonResponse, readJsonBody, logMailEvent, retrySendJob, cloudflareSmtpTransport } from "@altasme/webmail-kit";
+import { mailHandler } from "../../../../_lib/mailHandler";
 
 export const onRequestPost = mailHandler(async ({ ctx, db, user, access }) => {
   const body = await readJsonBody(ctx.request);

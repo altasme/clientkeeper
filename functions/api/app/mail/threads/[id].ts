@@ -3,9 +3,8 @@
 // body. Trash/Junk messages are only included when viewing from that
 // folder, so a deleted reply doesn't reappear in an Inbox conversation.
 
-import { errorResponse, jsonResponse, normalizeParam } from "../../../../_lib/mail/http";
-import { loadMessageDetails } from "../../../../_lib/mail/detail";
-import { mailHandler } from "../../../../_lib/mail/route";
+import { errorResponse, jsonResponse, normalizeParam, loadMessageDetails } from "@altasme/webmail-kit";
+import { mailHandler } from "../../../../_lib/mailHandler";
 
 export const onRequestGet = mailHandler<"id">(async ({ ctx, db, access }) => {
   const id = normalizeParam(ctx.params.id);

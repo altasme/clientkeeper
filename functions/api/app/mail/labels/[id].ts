@@ -1,8 +1,8 @@
 // PATCH  /api/app/mail/labels/:id -- { name?, color? }
 // DELETE /api/app/mail/labels/:id -- removes the label from every message, then deletes it
 
-import { asString, errorResponse, jsonResponse, normalizeParam, nowIso, readJsonBody } from "../../../../_lib/mail/http";
-import { mailHandler } from "../../../../_lib/mail/route";
+import { asString, errorResponse, jsonResponse, normalizeParam, nowIso, readJsonBody } from "@altasme/webmail-kit";
+import { mailHandler } from "../../../../_lib/mailHandler";
 import { COLOR_RE } from "./index";
 
 async function loadLabel(db: D1Database, id: string) {

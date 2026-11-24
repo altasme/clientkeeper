@@ -1,9 +1,7 @@
 // POST /api/app/mail/messages/:id/inbox -- Move an archived message back to Inbox (or Sent, for outbound).
 
-import { applyMessageAction } from "../../../../../_lib/mail/actions";
-import { errorResponse, jsonResponse, normalizeParam } from "../../../../../_lib/mail/http";
-import { mailHandler } from "../../../../../_lib/mail/route";
-import { loadMessages } from "../../../../../_lib/mail/store";
+import { applyMessageAction, errorResponse, jsonResponse, normalizeParam, loadMessages } from "@altasme/webmail-kit";
+import { mailHandler } from "../../../../../_lib/mailHandler";
 
 export const onRequestPost = mailHandler<"id">(async ({ ctx, db, user, access }) => {
   const id = normalizeParam(ctx.params.id);

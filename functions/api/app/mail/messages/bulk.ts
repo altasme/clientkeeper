@@ -1,9 +1,8 @@
 // POST /api/app/mail/messages/bulk -- { messageIds: string[], action, labelId? }
 // action: markRead | markUnread | star | unstar | archive | moveToInbox | junk | notJunk | trash | restore | deleteForever | applyLabel | removeLabel
 
-import { applyMessageAction, isMessageAction } from "../../../../_lib/mail/actions";
-import { asStringArray, errorResponse, jsonResponse, readJsonBody } from "../../../../_lib/mail/http";
-import { mailHandler } from "../../../../_lib/mail/route";
+import { applyMessageAction, isMessageAction, asStringArray, errorResponse, jsonResponse, readJsonBody } from "@altasme/webmail-kit";
+import { mailHandler } from "../../../../_lib/mailHandler";
 
 export const onRequestPost = mailHandler(async ({ ctx, db, user, access }) => {
   const body = await readJsonBody(ctx.request);

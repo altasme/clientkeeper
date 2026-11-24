@@ -1,9 +1,8 @@
 // GET  /api/app/mail/labels?accountId=<id|all>
 // POST /api/app/mail/labels -- { accountId, name, color }
 
-import { scopeAccountIds, placeholders } from "../../../../_lib/mail/access";
-import { asString, errorResponse, jsonResponse, nowIso, readJsonBody } from "../../../../_lib/mail/http";
-import { mailHandler } from "../../../../_lib/mail/route";
+import { scopeAccountIds, placeholders, asString, errorResponse, jsonResponse, nowIso, readJsonBody } from "@altasme/webmail-kit";
+import { mailHandler } from "../../../../_lib/mailHandler";
 
 export const COLOR_RE = /^#[0-9a-fA-F]{6}$/;
 

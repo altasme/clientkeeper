@@ -2,10 +2,8 @@
 // searching every folder except Trash/Junk (folder=all) unless a folder is
 // given. Always scoped to the caller's accessible mailboxes.
 
-import { scopeAccountIds } from "../../../_lib/mail/access";
-import { errorResponse, jsonResponse } from "../../../_lib/mail/http";
-import { listThreads, parseListParams } from "../../../_lib/mail/query";
-import { mailHandler } from "../../../_lib/mail/route";
+import { scopeAccountIds, errorResponse, jsonResponse, listThreads, parseListParams } from "@altasme/webmail-kit";
+import { mailHandler } from "../../../_lib/mailHandler";
 
 export const onRequestGet = mailHandler(async ({ ctx, db, access }) => {
   const url = new URL(ctx.request.url);

@@ -1,8 +1,7 @@
 // GET /api/app/mail/staff -- staff list for the mailbox-access picker (owner/admin only).
 
-import { isMailAdmin } from "../../../_lib/mail/access";
-import { errorResponse, jsonResponse } from "../../../_lib/mail/http";
-import { mailHandler } from "../../../_lib/mail/route";
+import { isMailAdmin, errorResponse, jsonResponse } from "@altasme/webmail-kit";
+import { mailHandler } from "../../../_lib/mailHandler";
 
 export const onRequestGet = mailHandler(async ({ db, user }) => {
   if (!isMailAdmin(user)) return errorResponse(403, "Only an owner or admin can manage mailbox access.");

@@ -2,10 +2,8 @@
 // PUT /api/app/mail/identities/:id/access -- replace the grant list: { grants: [{ userId, canSend }] }
 // Access is explicit and defaults to nobody (CLAUDE.md §32).
 
-import { isMailAdmin } from "../../../../../_lib/mail/access";
-import { logMailEvent } from "../../../../../_lib/mail/events";
-import { errorResponse, jsonResponse, normalizeParam, nowIso, readJsonBody } from "../../../../../_lib/mail/http";
-import { mailHandler } from "../../../../../_lib/mail/route";
+import { isMailAdmin, logMailEvent, errorResponse, jsonResponse, normalizeParam, nowIso, readJsonBody } from "@altasme/webmail-kit";
+import { mailHandler } from "../../../../../_lib/mailHandler";
 
 export const onRequestGet = mailHandler<"id">(async ({ ctx, db, user }) => {
   if (!isMailAdmin(user)) return errorResponse(403, "Only an owner or admin can manage mailbox access.");

@@ -5,13 +5,8 @@
 // No credential is ever returned: SMTP status is a configured/not_configured
 // flag computed server-side from env (config.ts smtpStatus()).
 
-import { isValidEmail, normalizeEmail } from "../../../../_lib/mail/address";
-import { isMailAdmin } from "../../../../_lib/mail/access";
-import { loadSignatures, serializeSignature } from "../../../../_lib/mail/compose";
-import { smtpStatus } from "../../../../_lib/mail/config";
-import { logMailEvent } from "../../../../_lib/mail/events";
-import { asString, errorResponse, jsonResponse, nowIso, readJsonBody } from "../../../../_lib/mail/http";
-import { mailHandler } from "../../../../_lib/mail/route";
+import { isValidEmail, normalizeEmail, isMailAdmin, loadSignatures, serializeSignature, smtpStatus, logMailEvent, asString, errorResponse, jsonResponse, nowIso, readJsonBody } from "@altasme/webmail-kit";
+import { mailHandler } from "../../../../_lib/mailHandler";
 
 interface AccountRow {
   id: string;

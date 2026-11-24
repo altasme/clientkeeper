@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import PostalMime from "../../mail-worker/node_modules/postal-mime/dist/esm/postal-mime.js";
-import { attachmentFilename, computeDedupeKey, isLikelyJunk, normalizeParsed } from "../../mail-worker/src/parse";
+import { attachmentFilename, computeDedupeKey, isLikelyJunk, normalizeParsed } from "@altasme/webmail-kit/worker/parse";
 
 const RAW = [
   "Return-Path: <sender@client.example>",

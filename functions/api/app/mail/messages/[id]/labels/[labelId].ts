@@ -1,9 +1,7 @@
 // DELETE /api/app/mail/messages/:id/labels/:labelId -- remove a label from a message
 
-import { applyMessageAction } from "../../../../../../_lib/mail/actions";
-import { errorResponse, jsonResponse, normalizeParam } from "../../../../../../_lib/mail/http";
-import { mailHandler } from "../../../../../../_lib/mail/route";
-import { loadMessages } from "../../../../../../_lib/mail/store";
+import { applyMessageAction, errorResponse, jsonResponse, normalizeParam, loadMessages } from "@altasme/webmail-kit";
+import { mailHandler } from "../../../../../../_lib/mailHandler";
 
 export const onRequestDelete = mailHandler<"id" | "labelId">(async ({ ctx, db, user, access }) => {
   const id = normalizeParam(ctx.params.id);

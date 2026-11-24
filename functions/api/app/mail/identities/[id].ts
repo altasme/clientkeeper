@@ -2,10 +2,8 @@
 // Deactivating (isActive:false) hides it from everyone's mailbox list and
 // From picker without deleting any mail.
 
-import { isMailAdmin } from "../../../../_lib/mail/access";
-import { logMailEvent } from "../../../../_lib/mail/events";
-import { errorResponse, jsonResponse, normalizeParam, nowIso, readJsonBody } from "../../../../_lib/mail/http";
-import { mailHandler } from "../../../../_lib/mail/route";
+import { isMailAdmin, logMailEvent, errorResponse, jsonResponse, normalizeParam, nowIso, readJsonBody } from "@altasme/webmail-kit";
+import { mailHandler } from "../../../../_lib/mailHandler";
 import { validateIdentityFields } from "./index";
 
 export const onRequestPatch = mailHandler<"id">(async ({ ctx, db, user }) => {

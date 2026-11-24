@@ -4,9 +4,8 @@
 // messages that arrived after it -- the auto-refresh poll uses this for the
 // "new mail" toast without re-fetching the list.
 
-import { placeholders, scopeAccountIds } from "../../../_lib/mail/access";
-import { jsonResponse } from "../../../_lib/mail/http";
-import { mailHandler } from "../../../_lib/mail/route";
+import { placeholders, scopeAccountIds, jsonResponse } from "@altasme/webmail-kit";
+import { mailHandler } from "../../../_lib/mailHandler";
 
 export const onRequestGet = mailHandler(async ({ ctx, db, user, access }) => {
   const url = new URL(ctx.request.url);

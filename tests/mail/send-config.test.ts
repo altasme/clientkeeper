@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { DEFAULT_USER_SETTINGS, resolveSmtpConfig, sanitizeUserSettings, validatePolicyPatch } from "../../functions/_lib/mail/config";
-import { toFtsQuery } from "../../functions/_lib/mail/query";
-import { backoffMs, parseComposeBody } from "../../functions/_lib/mail/send";
+import { DEFAULT_USER_SETTINGS, resolveSmtpConfig, sanitizeUserSettings, validatePolicyPatch } from "@altasme/webmail-kit/config";
+import { toFtsQuery } from "@altasme/webmail-kit/query";
+import { backoffMs, parseComposeBody } from "@altasme/webmail-kit/send";
 
 test("exponential backoff with jitter bounds", () => {
   assert.equal(backoffMs(1, 0.5), 60_000);

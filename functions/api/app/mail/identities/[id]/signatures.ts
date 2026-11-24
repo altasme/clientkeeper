@@ -2,12 +2,8 @@
 // POST /api/app/mail/identities/:id/signatures -- create { name, bodyHtml, useForNew, useForReply }
 // Anyone who can send from the identity (or an owner/admin) can manage its signatures.
 
-import { isMailAdmin } from "../../../../../_lib/mail/access";
-import { loadSignatures, serializeSignature } from "../../../../../_lib/mail/compose";
-import { asString, errorResponse, jsonResponse, normalizeParam, nowIso, readJsonBody } from "../../../../../_lib/mail/http";
-import { mailHandler } from "../../../../../_lib/mail/route";
-import { sanitizeOutboundHtml } from "../../../../../_lib/mail/sanitize";
-import { htmlToText } from "../../../../../_lib/mail/text";
+import { isMailAdmin, loadSignatures, serializeSignature, asString, errorResponse, jsonResponse, normalizeParam, nowIso, readJsonBody, sanitizeOutboundHtml, htmlToText } from "@altasme/webmail-kit";
+import { mailHandler } from "../../../../../_lib/mailHandler";
 
 export const onRequestGet = mailHandler<"id">(async ({ ctx, db, user, access }) => {
   const id = normalizeParam(ctx.params.id);

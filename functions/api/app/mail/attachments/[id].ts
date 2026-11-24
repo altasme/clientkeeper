@@ -2,10 +2,8 @@
 // DELETE /api/app/mail/attachments/:id -- remove an attachment from one of the caller's drafts
 // No public or long-lived URL exists for any attachment.
 
-import { errorResponse, jsonResponse, normalizeParam } from "../../../../_lib/mail/http";
-import { mailHandler } from "../../../../_lib/mail/route";
-import { authorizeAttachment, contentDisposition } from "../../../../_lib/mail/drafts";
-import { deleteUnreferencedObjects } from "../../../../_lib/mail/storage";
+import { errorResponse, jsonResponse, normalizeParam, authorizeAttachment, contentDisposition, deleteUnreferencedObjects } from "@altasme/webmail-kit";
+import { mailHandler } from "../../../../_lib/mailHandler";
 
 export const onRequestGet = mailHandler<"id">(async ({ ctx, db, user, access }) => {
   const att = await authorizeAttachment(db, access, user.id, normalizeParam(ctx.params.id));
