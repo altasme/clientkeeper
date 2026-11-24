@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import PostalMime from "../../mail-worker/node_modules/postal-mime/dist/esm/postal-mime.js";
-import { buildMimeMessage, quotedPrintable } from "../../functions/_lib/mail/mime";
+import { buildMimeMessage, quotedPrintable } from "@altasme/webmail-kit/mime";
 
 test("quoted-printable keeps lines <= 76 and encodes UTF-8", () => {
   const qp = quotedPrintable("Salamat po ₱599 " + "x".repeat(200) + "\nnext line=");

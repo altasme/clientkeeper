@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { dotStuff, smtpSend, SmtpError, type SmtpConfig } from "../../functions/_lib/mail/smtp";
+import { dotStuff, smtpSend, SmtpError, type SmtpConfig } from "@altasme/webmail-kit/smtp";
 import { createFakeSmtp } from "./fakeSmtp";
 
 const base: SmtpConfig = { host: "smtp.fake.test", port: 465, security: "tls", username: "user@fake.test", password: "s3cret", clientName: "altasme.com" };

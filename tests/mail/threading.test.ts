@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildReplyHeaders, computeReplyRecipients, normalizeMessageId, parseMessageIdList, threadLookupIds } from "../../functions/_lib/mail/threading";
-import { forwardSubject, replySubject, stripSubjectPrefixes } from "../../functions/_lib/mail/text";
+import { buildReplyHeaders, computeReplyRecipients, normalizeMessageId, parseMessageIdList, threadLookupIds } from "@altasme/webmail-kit/threading";
+import { forwardSubject, replySubject, stripSubjectPrefixes } from "@altasme/webmail-kit/text";
 
 test("normalizes message ids", () => {
   assert.equal(normalizeMessageId(" <ABC.123@Mail.Example.com> "), "abc.123@mail.example.com");

@@ -4,10 +4,8 @@
 // else -> 415, the UI offers download instead. Also used for cid: inline
 // images inside the sanitized email body iframe (same-origin, cookie-auth).
 
-import { errorResponse, normalizeParam } from "../../../../../_lib/mail/http";
-import { mailHandler } from "../../../../../_lib/mail/route";
-import { authorizeAttachment, contentDisposition } from "../../../../../_lib/mail/drafts";
-import { isPreviewable } from "../../../../../_lib/mail/storage";
+import { errorResponse, normalizeParam, authorizeAttachment, contentDisposition, isPreviewable } from "@altasme/webmail-kit";
+import { mailHandler } from "../../../../../_lib/mailHandler";
 
 export const onRequestGet = mailHandler<"id">(async ({ ctx, db, user, access }) => {
   const att = await authorizeAttachment(db, access, user.id, normalizeParam(ctx.params.id));

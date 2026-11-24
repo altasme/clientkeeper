@@ -1,5 +1,5 @@
 // Display helpers for the webmail UI. The address parser is a small
-// browser-side copy of functions/_lib/mail/address.ts's parseAddressList
+// browser-side copy of @altasme/webmail-kit's address.ts parseAddressList
 // (same "duplicate the pattern, not the code" convention as the rest of
 // this repo: src/ and functions/ are separate build targets). The server
 // re-validates every address at send time regardless.

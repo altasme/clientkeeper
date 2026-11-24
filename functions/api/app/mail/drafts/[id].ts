@@ -4,11 +4,8 @@
 //        second tab can never silently overwrite newer content.
 // DELETE /api/app/mail/drafts/:id -- discard (attachments too)
 
-import { errorResponse, jsonResponse, normalizeParam, nowIso, readJsonBody } from "../../../../_lib/mail/http";
-import { mailHandler } from "../../../../_lib/mail/route";
-import { coerceDraftAddresses, loadDraft } from "../../../../_lib/mail/drafts";
-import { deleteUnreferencedObjects } from "../../../../_lib/mail/storage";
-import { htmlToText } from "../../../../_lib/mail/text";
+import { errorResponse, jsonResponse, normalizeParam, nowIso, readJsonBody, coerceDraftAddresses, loadDraft, deleteUnreferencedObjects, htmlToText } from "@altasme/webmail-kit";
+import { mailHandler } from "../../../../_lib/mailHandler";
 
 const MAX_DRAFT_HTML = 2 * 1024 * 1024;
 

@@ -2,9 +2,8 @@
 // messages whose raw copy was stored in R2). Authenticated + access-checked;
 // always served as a download, never rendered.
 
-import { errorResponse, normalizeParam } from "../../../../../_lib/mail/http";
-import { mailHandler } from "../../../../../_lib/mail/route";
-import { placeholders } from "../../../../../_lib/mail/access";
+import { errorResponse, normalizeParam, placeholders } from "@altasme/webmail-kit";
+import { mailHandler } from "../../../../../_lib/mailHandler";
 
 export const onRequestGet = mailHandler<"id">(async ({ ctx, db, access }) => {
   const ids = [...access.keys()];

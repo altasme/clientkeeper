@@ -1,10 +1,8 @@
 // GET /api/app/mail/messages?accountId=<id|all>&folder=&labelId=&q=&unread=1&starred=1&hasAttachments=1&from=&to=&dateFrom=&dateTo=&sort=&limit=&offset=
-// Conversation list for a folder/label/search. See _lib/mail/query.ts.
+// Conversation list for a folder/label/search. See @altasme/webmail-kit's query.ts.
 
-import { scopeAccountIds } from "../../../../_lib/mail/access";
-import { jsonResponse } from "../../../../_lib/mail/http";
-import { listThreads, parseListParams } from "../../../../_lib/mail/query";
-import { mailHandler } from "../../../../_lib/mail/route";
+import { scopeAccountIds, jsonResponse, listThreads, parseListParams } from "@altasme/webmail-kit";
+import { mailHandler } from "../../../../_lib/mailHandler";
 
 export const onRequestGet = mailHandler(async ({ ctx, db, access }) => {
   const url = new URL(ctx.request.url);

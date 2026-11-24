@@ -3,11 +3,8 @@
 // executable file types, stores the bytes in the private R2 bucket and
 // records metadata. A failed upload leaves the draft untouched.
 
-import { loadPolicy } from "../../../../_lib/mail/config";
-import { errorResponse, jsonResponse, nowIso } from "../../../../_lib/mail/http";
-import { mailHandler } from "../../../../_lib/mail/route";
-import { attachmentKey, isBlockedFilename, normalizeMimeType, sanitizeFilename } from "../../../../_lib/mail/storage";
-import { serializeAttachment, type AttachmentRow } from "../../../../_lib/mail/store";
+import { loadPolicy, errorResponse, jsonResponse, nowIso, attachmentKey, isBlockedFilename, normalizeMimeType, sanitizeFilename, serializeAttachment, type AttachmentRow } from "@altasme/webmail-kit";
+import { mailHandler } from "../../../../_lib/mailHandler";
 
 export const onRequestPost = mailHandler(async ({ ctx, db, user, access }) => {
   const bucket = ctx.env.MAIL_ATTACHMENTS;

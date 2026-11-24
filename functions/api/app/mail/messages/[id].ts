@@ -2,11 +2,8 @@
 // PATCH  /api/app/mail/messages/:id -- { isRead?, isStarred? }
 // DELETE /api/app/mail/messages/:id -- move to Trash; ?permanent=1 on a message already in Trash deletes it forever
 
-import { applyMessageAction } from "../../../../_lib/mail/actions";
-import { errorResponse, jsonResponse, normalizeParam, readJsonBody } from "../../../../_lib/mail/http";
-import { loadMessageDetails } from "../../../../_lib/mail/detail";
-import { mailHandler } from "../../../../_lib/mail/route";
-import { loadMessages } from "../../../../_lib/mail/store";
+import { applyMessageAction, errorResponse, jsonResponse, normalizeParam, readJsonBody, loadMessageDetails, loadMessages } from "@altasme/webmail-kit";
+import { mailHandler } from "../../../../_lib/mailHandler";
 
 export const onRequestGet = mailHandler<"id">(async ({ ctx, db, access }) => {
   const id = normalizeParam(ctx.params.id);

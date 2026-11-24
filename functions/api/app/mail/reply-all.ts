@@ -3,9 +3,8 @@
 // Response: { jobId, messageId, threadId, status: sent|retry_scheduled|failed|queued, error }
 // "sent" means the SMTP server accepted the message, not that it was delivered.
 
-import { errorResponse, readJsonBody } from "../../../_lib/mail/http";
-import { mailHandler } from "../../../_lib/mail/route";
-import { handleSend } from "../../../_lib/mail/sendRoute";
+import { errorResponse, readJsonBody, handleSend } from "@altasme/webmail-kit";
+import { mailHandler } from "../../../_lib/mailHandler";
 
 export const onRequestPost = mailHandler(async (args) => {
   const body = await readJsonBody(args.ctx.request);

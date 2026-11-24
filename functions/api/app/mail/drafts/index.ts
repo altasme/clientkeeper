@@ -4,11 +4,8 @@
 //   rules), Re:/Fwd: subject, quoted original, the identity's signature,
 //   and -- for a forward -- the original's attachments.
 
-import { placeholders, scopeAccountIds } from "../../../../_lib/mail/access";
-import { buildPrefill, loadSignatures, signatureBlock } from "../../../../_lib/mail/compose";
-import { asString, errorResponse, jsonResponse, nowIso, readJsonBody } from "../../../../_lib/mail/http";
-import { mailHandler } from "../../../../_lib/mail/route";
-import { loadDraft, serializeDraftSummary, type DraftRow } from "../../../../_lib/mail/drafts";
+import { placeholders, scopeAccountIds, buildPrefill, loadSignatures, signatureBlock, asString, errorResponse, jsonResponse, nowIso, readJsonBody, loadDraft, serializeDraftSummary, type DraftRow } from "@altasme/webmail-kit";
+import { mailHandler } from "../../../../_lib/mailHandler";
 
 export const onRequestGet = mailHandler(async ({ ctx, db, user, access }) => {
   const ids = scopeAccountIds(access, new URL(ctx.request.url).searchParams.get("accountId"));

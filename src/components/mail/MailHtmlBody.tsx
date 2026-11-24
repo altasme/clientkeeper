@@ -1,5 +1,5 @@
 // Renders an email body that the SERVER has already sanitized
-// (functions/_lib/mail/sanitize.ts) inside a second isolation layer:
+// (@altasme/webmail-kit's sanitize.ts) inside a second isolation layer:
 //  - <iframe sandbox> WITHOUT allow-scripts: nothing in the email can ever
 //    execute, even if the sanitizer missed something.
 //  - allow-same-origin is granted only so (a) cookie-authenticated cid:

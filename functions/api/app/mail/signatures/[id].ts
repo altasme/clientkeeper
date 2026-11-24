@@ -1,11 +1,8 @@
 // PATCH  /api/app/mail/signatures/:id -- { name?, bodyHtml?, useForNew?, useForReply? }
 // DELETE /api/app/mail/signatures/:id
 
-import { isMailAdmin } from "../../../../_lib/mail/access";
-import { asString, errorResponse, jsonResponse, normalizeParam, nowIso, readJsonBody } from "../../../../_lib/mail/http";
-import { mailHandler, type MailHandlerArgs } from "../../../../_lib/mail/route";
-import { sanitizeOutboundHtml } from "../../../../_lib/mail/sanitize";
-import { htmlToText } from "../../../../_lib/mail/text";
+import { isMailAdmin, asString, errorResponse, jsonResponse, normalizeParam, nowIso, readJsonBody, sanitizeOutboundHtml, htmlToText } from "@altasme/webmail-kit";
+import { mailHandler, type MailHandlerArgs } from "../../../../_lib/mailHandler";
 
 async function loadOwned({ ctx, db, user, access }: MailHandlerArgs<"id">) {
   const id = normalizeParam(ctx.params.id);

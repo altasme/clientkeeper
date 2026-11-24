@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { dedupeAddresses, encodeHeaderValue, formatAddress, isAutomatedAddress, isValidEmail, parseAddress, parseAddressList, stripPlusTag } from "../../functions/_lib/mail/address";
+import { dedupeAddresses, encodeHeaderValue, formatAddress, isAutomatedAddress, isValidEmail, parseAddress, parseAddressList, stripPlusTag } from "@altasme/webmail-kit/address";
 
 test("parses names, angle addresses, quoted commas", () => {
   const r = parseAddressList(`"Doe, Jane" <Jane@Example.com>, bob@x.org; not-an-email,  Carl <carl@y.co>\nlast@z.io`);
