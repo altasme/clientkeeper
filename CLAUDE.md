@@ -672,3 +672,140 @@ The operator could not see "all the users and their sales". Cause: `/mycafe/cafe
 - Route: `GET /api/app/mycafe/cafes?days=` (any staff role) merges MyCafe's `/admin/cafes` and `/admin/sales-overview` with the local `clients.mycafe_cafe_id` link, so each row knows its ClientKeeper client (or `null`). Live, nothing stored; sales are aggregates only.
 - **A café with no client record** shows "Add to ClientKeeper" (owner/admin): `POST /api/app/mycafe/cafes/:cafeId/adopt` creates the client from the café's own record (owner, business, store, slug), links it and opens its detail page; audited. If a client with the owner's email already exists it is not overwritten: 409 with that client's id. Other roles see "Not a client yet".
 - `MyCafeLayout` is now `max-w-7xl` so the table fits without a horizontal scroll at 1280 px.
+
+---
+
+## 32. Webmail module: staff mailboxes inside ClientKeeper (`/mail`) [2026-11-24]
+
+A full business webmail client for Altaventures staff, built from the operator's "Standard Webmail Module V1.0" spec: folders, conversation threading, search, labels, bulk actions, attachments, signatures, several sender identities, a composer with autosave, SMTP sending with tracked retries, and inbound mail through Cloudflare Email Routing. It covers desktop (three panes) and mobile. Every action reads and writes D1 through real API routes. No part of it is a UI-only mockup.
+
+**Decisions confirmed with the operator before building (not re-asked):**
+1. **Altaventures staff mailboxes only**, not per-client mail, so there is no `tenant_id`. The mailbox identity (`mail_accounts`) is the scoping unit. Which addresses exist is data, not code; hello@/support@/sales@/billing@ are only suggestions in the schema comment.
+2. **Access is explicit and defaults to nobody.** `mail_account_access` (account, user, can_send) is granted by owner/admin from Mail settings → Mailboxes & access. Owner/admin can manage access but have **no implicit read access** to any mailbox; they grant it to themselves like anyone else. `can_send = 0` gives read-only access, and the identity then never appears in that person's From picker.
+3. **Inbound uses Cloudflare Email Routing plus a dedicated Email Worker.** The altasme.com MX records move off Purelymail/Titan (legacy) to Email Routing. That DNS work is done outside this session.
+4. **Outbound uses literal SMTP, not Resend.** The existing Resend helper (`functions/_lib/email.ts`) and its three callers are untouched.
+
+### 32.1 Architecture
+
+- **A new deployable unit, `mail-worker/`, is a standalone Cloudflare Worker, not part of the Pages project.** Email Routing can only deliver to a Worker's `email()` handler, and Pages Functions have no cron. The Worker therefore does two jobs: `email()` (inbound → D1/R2) and `scheduled()`, every minute (outbound retries, reaping sends stuck mid-flight, purging Trash after 30 days). It has its own `package.json` (one dependency, `postal-mime`), `tsconfig.json` and a **committed** `wrangler.toml`. The root `.gitignore` ignores `wrangler.toml` everywhere, so a `!mail-worker/wrangler.toml` negation was added; this one holds no secrets. The Worker imports the same `functions/_lib/mail/*` modules as the Pages routes through relative paths (wrangler's esbuild bundles them), so both writers produce identical rows.
+- **Shared library `functions/_lib/mail/`:** `address` (parsing/validation/RFC 2047, plus header-injection rejection), `threading` (Message-ID/In-Reply-To/References, Reply/Reply-All recipient rules), `mime` (MIME builder), `smtp` (protocol client, injected socket) + `smtpTransport` (the real `cloudflare:sockets` connector), `sanitize` (inbound HTML), `store` (message/thread persistence + FTS indexing + permanent delete), `send` (queue → attempt → retry pipeline + cron entry point), `sendRoute`, `query` (list/search), `detail`, `actions` (single + bulk mailbox actions), `compose` (reply/forward prefill + signatures), `drafts`, `storage` (R2 keys, filename/MIME validation), `access`, `config` (env, SMTP resolution, policy, user settings), `events`, `route`, `http`.
+- **Routes under `functions/api/app/mail/`**, all behind the existing `_middleware.ts` session+role gate, then a per-mailbox access check through `mailHandler()`. A message, thread, draft, label or attachment in a mailbox you can't access returns **404, never 403**, so ids can't be probed. Endpoints: `identities` (GET, POST admin), `identities/:id` (PATCH admin), `identities/:id/access` (GET/PUT admin), `identities/:id/signatures`, `signatures/:id`, `staff` (admin), `counts`, `messages` (list), `messages/bulk`, `messages/:id` (GET/PATCH/DELETE), `messages/:id/{archive,junk,restore,inbox,star,labels,raw}`, `messages/:id/labels/:labelId`, `threads/:id`, `search`, `send`, `reply`, `reply-all`, `forward`, `send/retry`, `drafts` (+ `:id`, `:id/send`), `labels` (+ `:id`), `attachments/upload`, `attachments/:id` (download/DELETE), `attachments/:id/preview`, `settings`.
+- **Storage:** attachment bytes and raw `.eml` copies go in a **private R2 bucket** (binding `MAIL_ATTACHMENTS`, bound to both this Pages project and the Worker). I did not reuse the ecosystem's existing file pattern, the marketing site's Cloudinary questionnaire uploads, because Cloudinary returns permanent public URLs, which the spec explicitly forbids for mail. No attachment ever has a public URL: every byte is served through an authenticated, access-checked route. I chose "authenticated access" from the spec's two options rather than signed URLs, so no unauthenticated endpoint was added and §0's "zero public endpoints" still holds.
+- **Frontend:** `/mail` is its own full-screen workspace (`src/pages/MailPage.tsx`), outside `Layout`, like MyCafe, because three panes need the sidebar's width. There is a "Mail" entry in the main nav. Components in `src/components/mail/`: `MailSidebar`, `MailMessageList`, `MailSearchBar`, `MailThreadView`, `MailHtmlBody`, `MailAttachmentPreview`, `MailComposer`, `RecipientInput`, `MailLabelManager`, `MailSettings`, `Toasts`. The typed client is `src/lib/mailApi.ts`, which reuses `api.ts`'s `apiFetch`; the only change there was adding `export`. `src/lib/mailUtils.ts` holds display helpers and a browser-side copy of the address parser. `RichTextEditor.tsx` gained two **optional, additive** props, `toolbar="mail"` (alignment, undo/redo, clear formatting) and `minHeightClass`; the proposal and agreement editors pass neither and render exactly as before. All view state (mailbox, folder, label, search, open conversation) lives in the URL, so Back works and closing a conversation returns to the same search results.
+
+### 32.2 Inbound (mail-worker/src/inbound.ts)
+
+Envelope recipient → `+tag` stripped → active, inbound-enabled `mail_accounts` row. If there is none, the Worker calls `setReject("550 5.1.1 …")`, an explicit bounce rather than a silent drop. The **raw .eml is written to R2 first.** The message is then parsed (postal-mime: small, built for Workers, isomorphic so it's also unit-testable in Node). The dedupe key is the normalized Message-ID, with a SHA-256 fallback over sender/Date/subject/body. The thread comes from In-Reply-To then References (never from the subject). Attachments go to R2 individually; a failed write marks that attachment `storage_status='failed'` and still stores the message. Message, recipients, attachments, thread bookkeeping and the audit event are inserted in **one transactional `db.batch()`**. The envelope address is recorded as Bcc when we were blind-copied. Bodies over ~900 KB are truncated in the row with a visible note, because of D1's ~2 MB value limit; the full original stays in R2 and is downloadable via "Download original". **Junk:** Email Routing records SPF/DKIM/DMARC results but gives no spam score, so only `dmarc=fail` files a message in Junk; SPF-only failures don't, because forwarding breaks SPF. On any processing error the raw copy is kept, a `mail_inbound_failures` row is written, and then either the message is forwarded to `MAIL_FALLBACK_FORWARD` (if set) or the error is re-thrown so the delivery fails visibly instead of being accepted and lost.
+
+### 32.3 Outbound (functions/_lib/mail/smtp.ts, send.ts)
+
+- **A real SMTP client over `cloudflare:sockets`:** greeting, EHLO, STARTTLS (587) or implicit TLS (465), AUTH PLAIN or LOGIN, MAIL FROM (with SIZE), RCPT TO, DATA (dot-stuffed), QUIT. Port 25 is blocked by Cloudflare. Plaintext (`security: "none"`) is refused unless the host is localhost. CR/LF/`<>` in envelope addresses is rejected. Errors carry the SMTP code and the server's reply text but never AUTH payloads or a session transcript.
+- **MIME:** multipart/alternative (text + HTML, quoted-printable UTF-8), multipart/related for cid: images, multipart/mixed for attachments (base64, wrapped at 76 columns), RFC 2047 names and subject, RFC 2231 filenames, and no Bcc header (Bcc exists only in the envelope).
+- **Pipeline:** `queueOutboundMessage()` writes the message, recipients, send job and draft hand-over in one batch **before any SMTP traffic**, so a sent email always has a record. The Message-ID is generated once and reused on retries. The `idempotency_key` (UNIQUE, generated by the composer per compose session) makes a double-click or a retried request return the existing job. `attemptSendJob()` takes a lease with a conditional UPDATE. Outcomes:
+  - 4xx, network error or timeout before end-of-data: `retry_scheduled` with backoff (1/2/4/8 min ±20%), up to 5 attempts.
+  - 5xx, missing SMTP config, or a vanished attachment: `failed`, never auto-retried.
+  - Connection lost after end-of-data, or a job still `sending` past its lease: `failed` as **"outcome unknown"**, never auto-resent, because the server may already have accepted it.
+  - Manual retry (`POST /send/retry`) only accepts failed or retry_scheduled jobs and grants 3 more attempts.
+  - Every attempt is a `mail_send_attempts` row.
+  - The UI says "Accepted by the mail server" and never "delivered".
+- The first attempt runs inline in the send request; later retries need the Worker's cron. **If the Worker isn't deployed, scheduled retries won't run** (manual retry still works).
+- **Limits:** recipients per message, sends per staff member per hour (counted from `mail_send_jobs`), and attachment count/size are all set by policy (Mail settings → Security, owner/admin, within hard ceilings in `config.ts`). Executable extensions are refused on upload.
+
+### 32.4 Security measures (checked explicitly)
+
+- **Auth:** the existing middleware covers every route (verified: 401 with no cookie). Authorization is per-mailbox on every message, thread, draft, attachment, label and send path (verified: a staff member without a grant gets 404 on another mailbox's thread, message and attachment, and an empty identity list).
+- **Sender identity:** From is always the identity's own address from the DB, never request input. A missing or unauthorized identity returns 404, read-only access returns 403, and a disabled identity returns 403.
+- **Inbound HTML, two layers:**
+  1. Server-side allowlist sanitizer on the Workers-native `HTMLRewriter`. It drops script/iframe/object/embed/form controls/svg/math/meta/link/base with their content, removes every on* handler and every non-allowlisted attribute, keeps only http/https/mailto/tel links (forced to `target=_blank` with `rel="noopener noreferrer"`), and strips @import/expression()/behavior/javascript:/`position:fixed` from CSS.
+  2. A sandboxed `<iframe srcdoc>` **without allow-scripts**, plus a CSP meta (`script-src 'none'`). `allow-same-origin` is granted only so cookie-authenticated cid: images load and the frame height can be measured; without allow-scripts that pairing is safe.
+- **Remote images:** blocked by default, with a per-message "Load remote images" button. The policy can be block / never / always.
+- **Attachments:** downloads are always `application/octet-stream` with `Content-Disposition: attachment`, nosniff and a sandbox CSP. Inline preview is limited to png/jpeg/gif/webp/pdf/text; text is always served as `text/plain`, and HTML/SVG are never previewed.
+- **Secrets:** SMTP credentials are only in env; `smtpStatus` returns just configured/not_configured, and nothing in any response or log includes a credential.
+- **Injection:** header injection is rejected in addresses, Message-ID/In-Reply-To/References and subject (CR/LF collapsed). FTS queries are escaped (every term quoted). LIKE wildcards are escaped. SQL is fully parameterized; the only interpolated identifiers come from fixed whitelists.
+- **Audit:** every write is logged in `mail_events` (moves, labels, sends, attempts, access and policy changes).
+
+### 32.5 Environment / deployment (nothing here was done live from this session)
+
+- **Pages project `clientkeeper`:**
+  - Bindings: `DB` (existing) and new R2 `MAIL_ATTACHMENTS`.
+  - Vars: `MAIL_SMTP_HOST`, `MAIL_SMTP_PORT` (465 or 587), `MAIL_SMTP_USERNAME`, optional `MAIL_SMTP_SECURITY` and `MAIL_SMTP_EHLO_NAME`.
+  - Secrets: `MAIL_SMTP_PASSWORD`, and optionally `MAIL_SMTP_PROFILES_JSON` for identities with their own SMTP login, referenced by `mail_accounts.smtp_profile`.
+- **Worker `clientkeeper-mail-worker`:**
+  1. Fill the two `REPLACE_ME` D1 values in `mail-worker/wrangler.toml`.
+  2. Create the bucket: `npx wrangler r2 bucket create clientkeeper-mail-attachments`.
+  3. Set the same SMTP vars in `[vars]` and `npx wrangler secret put MAIL_SMTP_PASSWORD`.
+  4. Run `cd mail-worker && npm ci && npx wrangler deploy`.
+- **Email Routing:** enable it for altasme.com (this replaces the MX records); add one routing rule per mailbox address, or a catch-all, with the action "Send to a Worker → clientkeeper-mail-worker". Optionally verify a fallback destination and set `MAIL_FALLBACK_FORWARD`.
+- **SPF/DKIM for outbound** are the SMTP provider's records and must be published for altasme.com, or sent mail will land in recipients' spam. This is outside the code.
+- **Order:** merge and run clienthub's schema first (`npx wrangler d1 execute <db> --remote --file=./d1/schema.sql`), then deploy this repo, then the Worker, then switch MX.
+
+### 32.6 How this was tested
+
+- **Unit tests** (new `npm test`, `node:test` via the new `tsx` devDependency, `tests/mail/`): **35 passing.**
+  - The SMTP client against a scripted in-memory server: TLS/STARTTLS paths, AUTH PLAIN/LOGIN, 4xx → transient, 5xx → permanent, drop after DATA → unknown, credentials not echoed, CR/LF envelope injection refused, dot-stuffing.
+  - MIME built by `mime.ts` and parsed back with postal-mime: non-ASCII subject and names, threading headers, a byte-exact PDF attachment, a cid: inline image, no Bcc header, CRLF-only output.
+  - Address parsing and injection.
+  - Reply/Reply-All rules.
+  - Inbound normalization against a real multipart fixture, the dedupe fallback, and the junk heuristic.
+  - Backoff, compose validation, SMTP config resolution, settings/policy whitelisting, FTS escaping.
+- **Live end to end in workerd (local, not production):** both runtimes ran against one local D1 + R2, with the full clienthub schema applied, including FTS5:
+  - `wrangler pages dev` for this app;
+  - `wrangler dev --test-scheduled` for the mail worker;
+  - a local SMTP sink on 127.0.0.1:2525;
+  - a hand-minted `ck_session` cookie.
+
+  Verified:
+  - **Inbound** through the local `/cdn-cgi/handler/email` endpoint:
+    - storing a multipart message;
+    - a redelivery recorded as a duplicate (one row);
+    - a DMARC-fail message filed in Junk;
+    - `support+web@` routing to support@;
+    - an unknown address rejected with 550;
+    - raw copy and attachments present in R2, and FTS rows written.
+  - **Sanitizer output in workerd:** script, on*, javascript:, iframe, @import and the tracking pixel removed; the cid: image rewritten to the preview route; two remote images counted as blocked; `remoteImages=1` restores the pixel but never the script.
+  - **Authorization:** 401/403/404 as described in §32.4.
+  - **Attachments:** download/preview headers; read-only access refused on send and draft.
+  - **Mailbox actions:** label, star, archive, restore and the Trash-only permanent delete. Labels can't be applied across mailboxes (0 affected).
+  - **Search:** FTS search including attachment-name and label-name matches.
+  - **Drafts and replies:**
+    - Reply-All prefill: the no-reply Cc was dropped, our own address excluded, the signature inserted, and the `<script>` stripped from the signature.
+    - Autosave, with a stale version returning 409.
+    - Upload, with `.exe` refused.
+  - **Real SMTP sends** over `cloudflare:sockets` to the sink:
+    - correct envelope and headers, the In-Reply-To/References chain, the reply in the same thread, the attachment on the wire;
+    - replaying the same idempotency key returned `duplicate:true` with no second send;
+    - the forward carried the original's attachments.
+  - **Failure handling:**
+    - 451 → `retry_scheduled`; 550 → `failed`;
+    - manual retry of a 550 is still failed; retrying a sent message returns 409;
+    - the cron run retried the due job (attempt 2);
+    - a job artificially left `sending` past its lease was reaped as "outcome unknown".
+  - **Settings:** policy and identity changes refused for sales (403), and out-of-range policy refused (400).
+- **Browser (Playwright, system Chrome):**
+  - Desktop at 1440 px: list, conversation, iframe sandbox attributes, header details, label chips, composer (chips with an invalid address blocking send, autosave reaching "Saved", send → "accepted by the mail server" toast), settings, search highlighting.
+  - Mobile at 390 px: list, conversation, drawer, full-screen composer.
+  - No horizontal overflow at either width, and zero console errors.
+  - **This caught a real bug** that the API tests couldn't: clicking into the composer body put the caret after the auto-inserted signature, so the user typed inside it. Fixed by moving the caret to the leading paragraph on the first pointer-up or keyboard focus, and re-verified (the text now lands above the signature).
+- `npm run build`, `npm run lint`, `npx tsc -p functions/tsconfig.json --noEmit` and `mail-worker`'s `tsc` are all clean. All scratch tooling (root `wrangler.toml`/`.dev.vars`, the Worker's local test toml, `.wrangler` dirs, the SMTP sink, Playwright scripts) was removed or stopped.
+
+### 32.7 Not verified / known limitations / not built
+
+- **Never run against real infrastructure:** no real SMTP provider, Email Routing, production D1 or R2 (no credentials or network path from this session). Specific unknowns:
+  - real-world TLS/STARTTLS against the chosen provider;
+  - provider-specific auth quirks;
+  - the provider's message-size limit relative to the 25 MB attachment policy;
+  - Email Routing's exact behavior when the Worker throws.
+
+  Send one test message each way before switching MX.
+- Messages with no Message-ID: the local Email Routing simulator refuses them (real Email Routing likely does too), so the hash dedupe fallback is covered by unit tests only.
+- **Auto-refresh polls** (default 45 s, 4× slower in a background tab); there is no realtime push. Notifications are in-page toasts, an optional sound, and optional desktop notifications.
+- Spam filtering is the DMARC-fail rule only (no scoring, no per-sender block list). There is no antivirus scan of attachments; only executable extensions are blocked.
+- `mail_inbound_failures` has **no UI yet**; check it by querying D1. Raw copies of failed messages live under `failed/` in R2.
+- **Drafts are private to their author**, even in a shared mailbox (a deliberate choice).
+- Not built:
+  - a resizable composer (only minimize/maximize/full screen);
+  - a bottom reading pane (only "right" or "full");
+  - an image-insert button in the editor (signature logos only via pasted HTML or an https image URL in the HTML);
+  - an "empty Trash" one-click (select all → Delete forever does it; the Worker also purges Trash after 30 days).
+- Conversation-row actions apply to the messages that matched the current view, not to messages of that thread sitting in other folders. Junk/Trash messages are hidden from an Inbox conversation view.
+- The send rate limit is a D1 count per user per hour, not a distributed limiter (fine at staff scale).

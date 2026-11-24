@@ -40,7 +40,7 @@ export function isMyCafeAdmin(staffUser: StaffUser): boolean {
   return staffUser.role === "owner" || staffUser.role === "admin";
 }
 
-async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
+export async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
   const res = await fetch(path, {
     ...options,
     credentials: "same-origin",

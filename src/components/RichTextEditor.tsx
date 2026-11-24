@@ -15,6 +15,12 @@ interface Props {
   value: string;
   onChange: (html: string) => void;
   placeholder?: string;
+  // [2026-11-24] Optional, additive -- used by the webmail composer
+  // (CLAUDE.md §32). "mail" swaps headings/table for alignment, undo/redo
+  // and clear formatting; the proposal/agreement editors pass nothing and
+  // render exactly as before.
+  toolbar?: "document" | "mail";
+  minHeightClass?: string;
 }
 
 function exec(command: string, value?: string) {
@@ -32,7 +38,21 @@ const BUTTONS: Array<{ label: string; title: string; run: () => void }> = [
   { label: "1. List", title: "Numbered list", run: () => exec("insertOrderedList") },
 ];
 
-export default function RichTextEditor({ value, onChange, placeholder }: Props) {
+const MAIL_BUTTONS: Array<{ label: string; title: string; run: () => void }> = [
+  { label: "B", title: "Bold", run: () => exec("bold") },
+  { label: "I", title: "Italic", run: () => exec("italic") },
+  { label: "U", title: "Underline", run: () => exec("underline") },
+  { label: "• List", title: "Bulleted list", run: () => exec("insertUnorderedList") },
+  { label: "1. List", title: "Numbered list", run: () => exec("insertOrderedList") },
+  { label: "⇤", title: "Align left", run: () => exec("justifyLeft") },
+  { label: "↔", title: "Align center", run: () => exec("justifyCenter") },
+  { label: "⇥", title: "Align right", run: () => exec("justifyRight") },
+  { label: "↶", title: "Undo", run: () => exec("undo") },
+  { label: "↷", title: "Redo", run: () => exec("redo") },
+  { label: "Tx", title: "Clear formatting", run: () => exec("removeFormat") },
+];
+
+export default function RichTextEditor({ value, onChange, placeholder, toolbar = "document", minHeightClass = "min-h-[320px]" }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   // Starts as `null`, never `value` -- the contentEditable div's actual DOM
   // content always starts empty on mount regardless of what `value` already
@@ -82,7 +102,7 @@ export default function RichTextEditor({ value, onChange, placeholder }: Props) 
   return (
     <div className="rounded-lg border border-ink/15 bg-white">
       <div className="flex flex-wrap items-center gap-1 border-b border-ink/10 p-2">
-        {BUTTONS.map((btn) => (
+        {(toolbar === "mail" ? MAIL_BUTTONS : BUTTONS).map((btn) => (
           <button
             key={btn.label}
             type="button"
@@ -100,9 +120,11 @@ export default function RichTextEditor({ value, onChange, placeholder }: Props) 
         <button type="button" title="Insert link" onMouseDown={(e) => e.preventDefault()} onClick={handleLink} className="rounded px-2 py-1 text-xs font-semibold text-ink/70 hover:bg-ink/5">
           Link
         </button>
-        <button type="button" title="Insert table" onMouseDown={(e) => e.preventDefault()} onClick={handleTable} className="rounded px-2 py-1 text-xs font-semibold text-ink/70 hover:bg-ink/5">
-          Table
-        </button>
+        {toolbar === "document" && (
+          <button type="button" title="Insert table" onMouseDown={(e) => e.preventDefault()} onClick={handleTable} className="rounded px-2 py-1 text-xs font-semibold text-ink/70 hover:bg-ink/5">
+            Table
+          </button>
+        )}
       </div>
       <div
         ref={ref}
@@ -111,7 +133,7 @@ export default function RichTextEditor({ value, onChange, placeholder }: Props) 
         onInput={handleInput}
         onBlur={handleInput}
         data-placeholder={placeholder}
-        className="proposal-content min-h-[320px] p-4 text-sm text-ink/90 focus:outline-none empty:before:text-ink/30 empty:before:content-[attr(data-placeholder)]"
+        className={`proposal-content ${minHeightClass} p-4 text-sm text-ink/90 focus:outline-none empty:before:text-ink/30 empty:before:content-[attr(data-placeholder)]`}
       />
     </div>
   );
