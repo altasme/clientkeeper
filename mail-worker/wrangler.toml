@@ -29,8 +29,8 @@ crons = ["* * * * *"]
 # Non-secret SMTP settings (the password is a secret, see above). Must match
 # the values set on the clientkeeper Pages project.
 [vars]
-MAIL_SMTP_HOST = ""
+MAIL_SMTP_HOST = "cpanel11wh.jpt1.cloud.z.com"
 MAIL_SMTP_PORT = "465"
-MAIL_SMTP_USERNAME = ""
+MAIL_SMTP_USERNAME = "sales@altasme.com"
 # MAIL_SMTP_SECURITY = "tls"          # or "starttls" (default is derived from the port)
 # MAIL_FALLBACK_FORWARD = "you@verified-destination.example"  # optional, must be a verified Email Routing destination
