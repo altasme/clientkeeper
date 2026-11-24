@@ -13,8 +13,8 @@ workers_dev = false
 # The SAME shared D1 database the clientkeeper and clienthub Pages projects bind as DB.
 [[d1_databases]]
 binding = "DB"
-database_name = "REPLACE_ME_shared_d1_database_name"
-database_id = "REPLACE_ME_shared_d1_database_id"
+database_name = "altaventures_db"
+database_id = "12325b6f-0fc4-451a-997c-23438c8e1a8b"
 
 # Private R2 bucket for raw .eml copies and attachments. Bind the same
 # bucket to the clientkeeper Pages project as MAIL_ATTACHMENTS.
