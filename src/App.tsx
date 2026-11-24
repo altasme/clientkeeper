@@ -24,6 +24,7 @@ import MyCafeClientDetailPage from "./pages/MyCafeClientDetailPage";
 import ProposalEditorPage from "./pages/ProposalEditorPage";
 import ServiceAgreementEditorPage from "./pages/ServiceAgreementEditorPage";
 import QuestionnaireEditorPage from "./pages/QuestionnaireEditorPage";
+import MailPage from "./pages/MailPage";
 
 function LegacyMyCafeClientRedirect() {
   const { id } = useParams();
@@ -55,6 +56,8 @@ function App() {
           <Route path="/payments" element={<PaymentsPage />} />
           <Route path="/settings" element={<SettingsPage />} />
         </Route>
+        {/* [2026-11-24] Webmail has its own full-screen workspace (three panes need the sidebar's width), CLAUDE.md §32. */}
+        <Route path="/mail" element={<MailPage />} />
         {/* MyCafe POS has its own workspace (own shell, own navigation), separate from the web-development CRM above. */}
         <Route element={<MyCafeLayout />}>
           <Route path="/mycafe" element={<MyCafeOverviewPage />} />

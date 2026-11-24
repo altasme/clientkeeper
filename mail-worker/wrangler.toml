@@ -1,0 +1,36 @@
+# ClientKeeper inbound mail + send-retry worker.
+# This file IS committed (unlike the repo-root wrangler.toml, which is a
+# gitignored local-dev scratch file) -- it holds no secrets. Fill in the two
+# REPLACE_ME values below before the first `npx wrangler deploy`.
+# Secrets are set separately (never here):
+#   npx wrangler secret put MAIL_SMTP_PASSWORD
+#   (optional) npx wrangler secret put MAIL_SMTP_PROFILES_JSON
+name = "clientkeeper-mail-worker"
+main = "src/index.ts"
+compatibility_date = "2026-11-01"
+workers_dev = false
+
+# The SAME shared D1 database the clientkeeper and clienthub Pages projects bind as DB.
+[[d1_databases]]
+binding = "DB"
+database_name = "REPLACE_ME_shared_d1_database_name"
+database_id = "REPLACE_ME_shared_d1_database_id"
+
+# Private R2 bucket for raw .eml copies and attachments. Bind the same
+# bucket to the clientkeeper Pages project as MAIL_ATTACHMENTS.
+[[r2_buckets]]
+binding = "MAIL_ATTACHMENTS"
+bucket_name = "clientkeeper-mail-attachments"
+
+# Every minute: outbound retries, stuck-send reaping, 30-day Trash purge.
+[triggers]
+crons = ["* * * * *"]
+
+# Non-secret SMTP settings (the password is a secret, see above). Must match
+# the values set on the clientkeeper Pages project.
+[vars]
+MAIL_SMTP_HOST = ""
+MAIL_SMTP_PORT = "465"
+MAIL_SMTP_USERNAME = ""
+# MAIL_SMTP_SECURITY = "tls"          # or "starttls" (default is derived from the port)
+# MAIL_FALLBACK_FORWARD = "you@verified-destination.example"  # optional, must be a verified Email Routing destination

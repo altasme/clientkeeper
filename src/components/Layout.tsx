@@ -18,6 +18,7 @@ const NAV_ITEMS = [
   { label: "Offers", to: "/offers" },
   { label: "Billing", to: "/billing" },
   { label: "Payments", to: "/payments" },
+  { label: "Mail", to: "/mail" },
 ];
 
 const PRODUCT_NAV_ITEMS = [{ label: "MyCafe POS", to: "/mycafe" }];

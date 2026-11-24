@@ -27,3 +27,7 @@ wrangler.toml
 *.njsproj
 *.sln
 *.sw?
+
+# The mail worker's wrangler.toml is a real deploy config (no secrets), unlike
+# the root one above.
+!mail-worker/wrangler.toml
