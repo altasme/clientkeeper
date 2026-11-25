@@ -1,3 +1,4 @@
+import { lazy, Suspense, type ReactNode } from "react";
 import { Routes, Route, Navigate, useParams } from "react-router-dom";
 import { MeProvider } from "./lib/MeContext";
 import Layout from "./components/Layout";
@@ -25,6 +26,16 @@ import ProposalEditorPage from "./pages/ProposalEditorPage";
 import ServiceAgreementEditorPage from "./pages/ServiceAgreementEditorPage";
 import QuestionnaireEditorPage from "./pages/QuestionnaireEditorPage";
 import MailPage from "./pages/MailPage";
+// Email Services pages are code-split: they're admin-only screens most
+// sessions never open, and keeping them out of the main chunk keeps it
+// under Vite's 500 kB warning.
+const EmailServicesPage = lazy(() => import("./pages/EmailServicesPage"));
+const EmailServiceDetailPage = lazy(() => import("./pages/EmailServiceDetailPage"));
+const EmailPlansPage = lazy(() => import("./pages/EmailPlansPage"));
+
+function Lazy({ children }: { children: ReactNode }) {
+  return <Suspense fallback={<p className="text-sm text-ink/40">Loading…</p>}>{children}</Suspense>;
+}
 
 function LegacyMyCafeClientRedirect() {
   const { id } = useParams();
@@ -50,6 +61,10 @@ function App() {
           <Route path="/discovery" element={<DiscoveryPage />} />
           <Route path="/presentations" element={<PresentationsPage />} />
           <Route path="/offers" element={<OffersPage />} />
+          {/* [2026-11-25] Client email hosting (plans, allowances, provisioning), CLAUDE.md §34. "plans" is matched before ":id". */}
+          <Route path="/email-services" element={<Lazy><EmailServicesPage /></Lazy>} />
+          <Route path="/email-services/plans" element={<Lazy><EmailPlansPage /></Lazy>} />
+          <Route path="/email-services/:id" element={<Lazy><EmailServiceDetailPage /></Lazy>} />
           <Route path="/billing" element={<BillingPage />} />
           <Route path="/billing/new" element={<NewBillPage />} />
           <Route path="/billing/:id" element={<BillDetailPage />} />

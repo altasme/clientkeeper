@@ -8,7 +8,7 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
-    "test": "tsx --test tests/mail/*.test.ts"
+    "test": "tsx --test tests/mail/*.test.ts tests/emailServices/*.test.ts"
   },
   "dependencies": {
     "@altasme/webmail-kit": "github:altasme/webmail#140a973cc58af2ebf93a78101c0f98cab55a5298",

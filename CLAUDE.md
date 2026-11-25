@@ -831,3 +831,222 @@ Per the operator's direct request after the `/mail` module went live and was con
 **Known open items:**
 - `@altasme/webmail-kit` is pinned to a specific commit, not a tagged release -- pushing a git tag to that repo failed from this sandbox (a transient `403`/RPC disconnect on `git push --tags`, not investigated further since pinning to a commit SHA is just as reproducible). Worth tagging a real `v1.0.0` from a normal environment if that matters later.
 - The package has not yet been consumed by a *second* real project -- this extraction's only consumer so far is this repo, so the generic `MailUser` boundary (and the per-module subpath fix above) is tested by one real integration, not two independent ones.
+
+---
+
+## 34. Email Services: client email hosting managed from ClientKeeper (Phases 1–3 + provider interface) [2026-11-25]
+
+The operator's "Altaventures Email Ecosystem" spec expands email from Altaventures' own staff mailboxes (§32/§33) into email hosting sold to clients: plans, mailbox allowances, domains, and mailboxes created at a third-party provider (Z.com first). This round builds the **ClientKeeper master panel and the engine behind it**. Schema lives in clienthub's `d1/schema.sql` (clienthub CLAUDE.md §31).
+
+**Scope decisions made by the operator (not re-asked):**
+1. **No Z.com credentials or API documentation exist yet.** Everything is built against a generic provider interface. The only implementation is an honest placeholder that fails every call with `not_configured`. Nothing about Z.com's real API is guessed.
+2. **`mail.altasme.com` is this same app** on a second custom domain, not a second deployment. The DNS/custom-domain step is not done here (no Cloudflare access). One code fix it needs was made (§34.6).
+3. **In scope:** the audit, the schema, ClientKeeper's Email Services module, the entitlement engine, and the provider interface. **Not in scope:** the client-facing "Email Management" module in clienthub (Phase 5), the `mail.altasme.com` domain wiring (Phase 6), and the real Z.com adapter.
+4. **Confirmed mid-round:** client mailboxes will eventually be read and sent through *this* app's own webmail (`/mail`), not Z.com's bundled webmail. The bridge isn't built, but the schema leaves room for it (§34.2).
+
+### 34.1 What exists vs. what's new
+
+- **The webmail (§32/§33) is a different system** and is untouched. `mail_*` tables hold Altaventures' own altasme.com mailboxes, received through Cloudflare Email Routing. The new `email_*` tables hold client subscriptions and provider-hosted mailboxes. Nothing in this round links the two yet.
+- **Reused:** clients (`clients.id`; client identity is never duplicated), staff auth (`_middleware.ts` + `StaffUser`), `client_activity` for the client timeline, the shared `audit_log` for plan-catalog edits, and the self-contained route + `_lib` module conventions.
+- **New library `functions/_lib/emailServices/`:**
+  - `provider/` holds the interface (`types.ts`), the placeholder (`notConfigured.ts`), the registry (`index.ts`), and the timeout/exception wrapper (`call.ts`).
+  - `policy.ts`: statuses, counted mailbox states, lifecycle rules, effective expiry, owner/admin role check.
+  - `engine.ts`: every state change (reserve/provision/retry/delete/discard/resolve, entitlements, plans, domains, lifecycle, sync, sweeps).
+  - `reconcile.ts`: a pure local-vs-provider diff.
+  - Also `services.ts` (create + read models), `plans.ts`, `logs.ts`, `validation.ts`, `http.ts`, `responses.ts`.
+
+### 34.2 Data model (summary; full comments in clienthub's schema)
+
+| Table | Purpose |
+|---|---|
+| `email_plans` | Editable plan catalog, seeded with Solo/Team/Growth/Business/Enterprise and ₱250 additional mailbox |
+| `email_services` | One subscription per row, `client_id` → `clients` |
+| `email_service_entitlements` | Signed-quantity ledger of add-ons and overrides |
+| `email_domains` | Domains per service; a domain can be live on only one service |
+| `email_mailboxes` | One row per mailbox; the row is both the state machine and the reservation |
+| `email_provisioning_logs` | Every provider call: outcome, normalized error, retryable |
+| `email_audit_logs` | Security-relevant actions, with `actor_type` staff / client / system |
+
+Design notes:
+- **Plan values are snapshotted onto the service when assigned.** A later catalog edit doesn't change what an existing customer has.
+- **The total allowance is never stored.** It is always `included_mailboxes + SUM(entitlements)`, computed inside the statement that consumes a slot.
+- **There is no separate reservations table.** A `reserved` mailbox row with a `reserved_until` lease *is* the reservation.
+- **Mailbox states:** `reserved → provisioning → active | failed | needs_review`, plus `deleting → deleted` and `failed → discarded`.
+- **States that count against the allowance:** provisioning, active, needs_review, deleting, and reserved while its lease is live.
+- **"Active mailboxes" shown to anyone means `active` only.** Held-but-unconfirmed slots are shown separately as "pending".
+- **No password column anywhere.** Passwords go straight to the provider. Retry asks for the password again.
+- **Webmail-bridge room (per the confirmed requirement), not used yet:**
+  - `email_mailboxes.inbound_source`: `cloudflare_email_routing` | `zcom_poll_sync`. Z.com mailboxes get `zcom_poll_sync`, because Z.com has no generic new-mail push.
+  - `provider_service_id` / `provider_mailbox_id` hold Z.com's opaque `service_id` / `email_id` per mailbox.
+  - Nullable `mail_account_id → mail_accounts(id)` links a mailbox to its webmail identity once bridged. Outbound will then use that identity's `smtp_profile` against Z.com's SMTP host, since Z.com's API has no send endpoint.
+- **Storage** is a plain integer (MB). It assumes nothing about Z.com's 5 GB service-level steps, which don't match 3/10/30/100 GB; that mismatch is an open business question.
+
+### 34.3 Entitlement engine and race safety
+
+Every limited-resource check sits **inside the single SQL statement that consumes the resource**. D1 runs each statement atomically and serializes writes, so two simultaneous requests can't both take the last slot.
+
+| Operation | How the check is done |
+|---|---|
+| Reserve a mailbox | `INSERT … SELECT … WHERE` checks service status ∈ (pending_setup, active, provisioning_error), plan present, `expires_at` in the future, domain live on this service, and allowance > counted |
+| Retry a failed mailbox | Conditional `UPDATE` with the same checks |
+| Entitlement changes | Conditional `INSERT … SELECT` that refuses to go below counted usage or below zero add-ons |
+| Plan changes | Conditional `UPDATE … FROM email_plans` with the same below-usage guard |
+| Domain removal | Conditional `UPDATE … WHERE NOT EXISTS (counted mailboxes)` |
+| Decommission | The status `UPDATE` repeats the "no counted mailboxes" check |
+
+The provider is called **between** two statements, never inside a transaction (same pattern as `mail_send_jobs`). Outcomes:
+- success → `active`;
+- a definite failure (`not_performed`) → `failed`, and the slot is released;
+- an unknown outcome (timeout, adapter exception, crash) → `needs_review`, and the slot is **held**;
+- a provider `duplicate` answer → also held as `needs_review`.
+
+`needs_review` is only cleared by an explicit admin "Resolve" (exists → active, absent → failed/deleted), never automatically.
+
+**Idempotency:** a client-generated `idempotencyKey` (UNIQUE) makes a double-submit return the existing row without a second provider call. Unique violations check the key first, because SQLite may report the address index before the key index.
+
+**Uniqueness:** partial unique indexes allow one live record per address and one live primary per service.
+
+**Time-based rules, applied lazily** (Pages has no cron) on every list/detail read and before every provisioning decision:
+- a stale `reserved` (provider never called) becomes `failed`;
+- a stale `provisioning`/`deleting` becomes `needs_review`;
+- an `active` service past `expires_at` becomes `expired`. Provisioning checks `expires_at` directly anyway, so an expired term can't provision even before the sweep runs.
+
+### 34.4 Lifecycle (`policy.ts`)
+
+| Action | Allowed from | Requirements and effect |
+|---|---|---|
+| Activate | pending_setup, provisioning_error | Needs plan + live domain + ≥1 **active** mailbox. Sets start/expiry. |
+| Suspend | active, expired | Reason required. Blocks new mailboxes. Deletes nothing. |
+| Reactivate | suspended | Only while the term is still running. |
+| Renew | active, expired, suspended | +1 billing interval from the later of now and current expiry, or an explicit date. expired → active. Mailboxes aren't recreated. |
+| Decommission | anything but cancelled | Reason required. Every mailbox must be deleted/resolved first. Releases domains. |
+
+Other rules:
+- A failed **primary** mailbox on a pending service sets `provisioning_error`. A later success returns the service to `pending_setup`.
+- Expiry never touches mailboxes.
+- Staff keep full inspect/manage ability in every state but `cancelled`.
+- `clientCanManageMailboxes()` already exists for Phase 5 (effective status `active` only).
+
+### 34.5 Provider interface and the placeholder
+
+`EmailHostingProvider` methods:
+
+| Method | |
+|---|---|
+| `status` | integration configured or not |
+| `listDomains` | |
+| `listMailboxes` | |
+| `getMailboxDetails` | |
+| `createMailbox` | gets a stable idempotency key (the mailbox id) |
+| `deleteMailbox` | |
+| `changeMailboxPassword` | in the interface; no admin UI this round |
+| `configureForwarding` | in the interface; no admin UI this round |
+| `getServiceDetails` | |
+| `getUsage` | |
+
+- **Results are values, not exceptions:** `{ ok, value } | { ok: false, error: { code, message, outcome: 'not_performed' | 'unknown', retryable } }`.
+- **Normalized error codes:** `not_configured`, `not_supported`, `auth_failed`, `rate_limited`, `timeout`, `unavailable`, `duplicate`, `invalid_input`, `not_found`, `quota_exceeded`, `provider_error`.
+- **`callProvider()`** adds a 20 s timeout and turns any thrown error into `outcome: 'unknown'`.
+
+**`NotConfiguredProvider`** (headed by a banner comment: "NOT A WORKING INTEGRATION") returns `not_configured` / `not_performed` / non-retryable for every method. It never returns success or invents an id. `getEmailProvider()` always returns it today.
+
+**To add Z.com:** write `provider/zcom.ts` against the real documentation, then return it from `getEmailProvider()` only when its secrets exist. Nothing outside `provider/` changes.
+
+What a staff member sees today:
+- Creating a mailbox returns **503 "Email provider not configured…"**. The mailbox is recorded as `failed` and its slot is released.
+- Sync records an error. A permanent amber "Provider not connected" banner is shown.
+
+### 34.6 Routes and UI
+
+**API**, all under `/api/app/` and behind the existing middleware. Every route is viewable by any staff role; every mutation requires owner/admin.
+
+| Route | Methods |
+|---|---|
+| `email-services` | GET (list), POST (create) |
+| `email-services/operations` | GET: failed/unknown provider operations across services |
+| `email-services/:id` | GET (detail), PATCH (notes, provider service id, expiry; reason required to change expiry) |
+| `…/plan` | POST |
+| `…/domains` | POST |
+| `…/domains/:domainId` | DELETE |
+| `…/entitlements` | POST |
+| `…/mailboxes` | POST (201 active / 200 duplicate / 202 outcome unknown / 503 not configured / 502 other provider failure / 409 no slot) |
+| `…/mailboxes/:mailboxId/retry` | POST |
+| `…/mailboxes/:mailboxId/delete` | POST (reason required) |
+| `…/mailboxes/:mailboxId/discard` | POST |
+| `…/mailboxes/:mailboxId/resolve` | POST |
+| `…/lifecycle` | POST |
+| `…/sync` | POST: displays discrepancies only, never changes a mailbox |
+| `…/logs` | GET |
+| `email-plans` | GET, POST |
+| `email-plans/:planId` | PATCH (incl. archive; plans are never deleted) |
+
+A mailbox or domain addressed through the wrong service returns 404.
+
+**Frontend:**
+- An "Email Services" nav item (before Billing) and three code-split pages (`React.lazy`). Lazy loading keeps the main chunk at ~469 kB; inlining them pushed it past Vite's 500 kB warning.
+- `EmailServicesPage`: list, search/filter, a "Failed operations" tab, and a create modal.
+- `EmailServiceDetailPage`, with the spec's sections: Overview (+ activation checklist), Mailbox usage, Mailboxes (retry/discard/resolve/delete per state), Domains, Plan & entitlement (with the ledger), Provider (+ Sync & reconcile and discrepancy list), Operations (lifecycle buttons valid for the current state), and Logs.
+- `EmailPlansPage`: the catalog editor.
+- Typed client: `src/lib/emailServicesApi.ts`.
+
+**Hostname fix for `mail.altasme.com` (the one real cross-host break found in the audit):**
+- `auth-start.ts` hardcoded `redirect_uri=https://clientkeeper.altasme.com/api/auth-callback`, and `auth-callback.ts` hardcoded its landing URL.
+- The session cookie is host-only (no `Domain=`, which is correct and was left alone). So a login started on `mail.altasme.com` would have set the cookie on `clientkeeper.altasme.com`, and the user would never be logged in on the mail host.
+- New `functions/_lib/hosts.ts` allowlists `clientkeeper.altasme.com` (lands on `/`) and `mail.altasme.com` (lands on `/mail`). Any other host (previews, spoofed `Host:`) falls back to the exact previous behavior, so the redirect target can't be steered.
+- **Before attaching the domain:** add `https://mail.altasme.com/api/auth-callback` to the WorkOS dashboard's allowed redirect URIs.
+- No other absolute `clientkeeper.*` URLs or CORS dependencies exist; the API is same-origin by construction.
+
+### 34.7 How this was tested
+
+**Unit + engine tests:** `npm test` now also runs `tests/emailServices/*.test.ts`. **66/66 pass** (35 existing mail + 31 new).
+- The engine runs against a real SQLite (Node's built-in `node:sqlite`) through a small D1-compatible shim (`tests/emailServices/d1Shim.ts`). Batches are transactional, and every call yields to the event loop so concurrent calls genuinely interleave.
+- The schema comes from `tests/emailServices/schema.fixture.sql`, the Email Services block copied verbatim plus its referenced tables. A drift-guard test fails if that block stops matching a sibling `clienthub` checkout. The suite also passes against the full canonical schema (`EMAIL_TESTS_USE_CLIENTHUB_SCHEMA=1`).
+- **Concurrency:** 10 simultaneous requests against 3 slots create exactly 3, and the provider is called exactly 3 times. A deliberate negative control (a naive check-then-insert under the same shim) *does* oversubscribe, proving the test can catch the race. A duplicate idempotency key sent concurrently produces one row and one provider call. The test passed 5/5 repeated runs.
+- **Also covered:**
+  - the placeholder fails all 9 operations honestly;
+  - stub provisioning releases its slot and sets provisioning_error, and the password appears in no table;
+  - unknown outcome and provider duplicate hold the slot, and "resolve absent" releases it;
+  - retry in place, and retry refused when the slot was taken;
+  - discard;
+  - the lease sweeps;
+  - a delete refused by the provider restores the mailbox, and a confirmed delete releases the slot;
+  - add-on/override rules, plan snapshotting, downgrade-below-usage refusal;
+  - domain conflicts and in-use removal;
+  - the full lifecycle, plus expiry blocking provisioning before the sweep and renew restoring it;
+  - sync reporting discrepancies without changing mailboxes;
+  - reconcile classifying all discrepancy types;
+  - validation, plan validation, `callProvider` timeout/throw, and the auth host allowlist.
+
+**Live in workerd (local only):** `wrangler pages dev` with the full canonical schema applied to a local D1 and hand-minted `ck_session` cookies (owner + sales).
+- 29 HTTP scenarios checked:
+  - 401 with no cookie; 403 for sales on every mutation; 400 validation;
+  - 503 not_configured provisioning recorded as failed with the slot released; a repeated idempotency key returned 200;
+  - the `operations` static route resolving ahead of `[serviceId]`;
+  - entitlement and plan refusals; `UPDATE … FROM` working in workerd;
+  - activation checklist enforcement, invalid transitions, and sync reporting not_configured;
+  - a 404 for a cross-service mailbox; domain conflicts surfaced as a warning;
+  - decommission requiring a reason; plan CRUD and archived-plan refusal.
+- With a mailbox seeded `active` to fill a Solo plan: single and 8-way parallel provisions all returned 409 with no stray rows. Domain removal and decommission were refused while in use.
+- A forced past `expires_at` was swept to `expired`, provisioning was refused, the mailbox stayed `active`, and renew restored it.
+- A password-leak query across all three email tables found 0 rows.
+- `auth-start` produced the right `redirect_uri` for each Host header.
+
+**Browser:** Playwright with system Chrome at 1440 and 390 px over the list, detail and plans pages, the create modal and the failed-operations tab. No horizontal overflow and no console errors other than an intentional 409. Provisioning through the UI showed the not-configured message, and the logs rendered.
+
+**Build and lint:** `npm run build`, `npm run lint` (clean), and `npx tsc -p functions/tsconfig.json --noEmit` all pass.
+
+**Cleanup:** all scratch artifacts (root `wrangler.toml`/`.dev.vars`, `.wrangler`, local D1, cookie minter, Playwright script) were removed.
+
+### 34.8 Not done / open items
+
+- **Real Z.com adapter:** waiting on credentials and documentation. Mailboxes can't become active until it exists.
+- **Phase 5 (client "Email Management" in clienthub):** not built. The tables, `clientCanManageMailboxes()`, and `actor_type='client'` are ready for it.
+- **Phase 6 (`mail.altasme.com`):** add the custom domain to the clientkeeper Pages project, and add the WorkOS redirect URI (§34.6). Optionally redirect `/` to `/mail` on that host.
+- **Webmail bridge** (polling sync for Z.com inbound, `mail_accounts` link, per-mailbox `smtp_profile`): schema room only.
+- **Not done this round:**
+  - a cron-driven expiry/lease sweep (sweeps are lazy on read and before writes);
+  - billing integration for add-ons (the ledger records unit price, but nothing charges);
+  - storage-quota enforcement;
+  - a configurable expiry "grace" policy (expiry blocks new mailboxes and changes nothing else);
+  - admin UI for password reset and forwarding (they exist in the interface).
+- **Production:** run clienthub's schema migration before deploying this; nothing here has run against production D1.
