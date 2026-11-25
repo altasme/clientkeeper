@@ -16,13 +16,17 @@
 //
 // Required env vars: WORKOS_CLIENT_ID.
 
+import { resolveHost } from "../_lib/hosts";
+
 interface Env {
   WORKOS_CLIENT_ID: string;
 }
 
-const REDIRECT_URI = "https://clientkeeper.altasme.com/api/auth-callback";
-
-export const onRequestGet: PagesFunction<Env> = async ({ env }) => {
+// [2026-11-25] Derived from the request's host (allowlisted in
+// _lib/hosts.ts) so a login started on mail.altasme.com completes there.
+// Unknown hosts get the canonical clientkeeper.altasme.com value, as before.
+export const onRequestGet: PagesFunction<Env> = async ({ env, request }) => {
+  const REDIRECT_URI = `${resolveHost(request.url).origin}/api/auth-callback`;
   if (!env.WORKOS_CLIENT_ID) {
     return new Response("Auth is not configured yet.", { status: 500 });
   }

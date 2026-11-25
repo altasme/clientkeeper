@@ -15,6 +15,7 @@
 import { exchangeAuthorizationCode } from "../_lib/workos";
 import { getStaffUser } from "../_lib/roles";
 import { createSessionCookie } from "../_lib/session";
+import { resolveHost } from "../_lib/hosts";
 
 interface Env {
   WORKOS_API_KEY: string;
@@ -23,7 +24,6 @@ interface Env {
   DB?: D1Database;
 }
 
-const HOME_URL = "https://clientkeeper.altasme.com/";
 
 function redirect(location: string, setCookie?: string): Response {
   const headers = new Headers({ Location: location });
@@ -32,6 +32,10 @@ function redirect(location: string, setCookie?: string): Response {
 }
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
+  // [2026-11-25] Land on the host the login started on (see _lib/hosts.ts);
+  // https://clientkeeper.altasme.com/ for anything not allowlisted, as before.
+  const known = resolveHost(request.url);
+  const HOME_URL = `${known.origin}${known.homePath}`;
   const url = new URL(request.url);
   const code = url.searchParams.get("code");
   const authError = url.searchParams.get("error");
