@@ -12,7 +12,15 @@ export interface FakeServerOptions {
   dataReply?: string;
   dropAfterData?: boolean;
   authReply?: string;
+  /** When set, AUTH succeeds (235) only for exactly these credentials, else 535. Overrides authReply. */
+  credentials?: { username: string; password: string };
+  /** Never send the greeting (simulates a server that accepts the TCP connection and then hangs). */
+  silent?: boolean;
 }
+
+const AUTH_OK = "235 2.7.0 Authentication successful";
+const AUTH_BAD = "535 5.7.8 Authentication credentials invalid";
+const unb64 = (s: string) => Buffer.from(s, "base64").toString("utf8");
 
 export interface FakeServerLog {
   commands: string[];
@@ -36,12 +44,19 @@ function makeSocket(opts: FakeServerOptions, log: FakeServerLog, tls: boolean, c
   let upgrade: (() => SmtpSocket) | undefined;
   let closed = false;
 
+  const authResult = (username: string, password: string) => {
+    if (opts.credentials) return username === opts.credentials.username && password === opts.credentials.password ? AUTH_OK : AUTH_BAD;
+    return opts.authReply ?? AUTH_OK;
+  };
+
   (async () => {
+    if (opts.silent) return;
     if (!carry?.greeted) await send(opts.greeting ?? "220 fake.test ESMTP ready");
     const reader = fromClient.readable.getReader();
     let buf = "";
     let inData = false;
     let authLoginStep = 0;
+    let authLoginUser = "";
     while (!closed) {
       const { value, done } = await reader.read();
       if (done) break;
@@ -67,12 +82,13 @@ function makeSocket(opts: FakeServerOptions, log: FakeServerLog, tls: boolean, c
         log.commands.push(line);
         if (authLoginStep === 1) {
           authLoginStep = 2;
+          authLoginUser = unb64(line);
           await send("334 UGFzc3dvcmQ6");
           continue;
         }
         if (authLoginStep === 2) {
           authLoginStep = 0;
-          await send(opts.authReply ?? "235 2.7.0 Authentication successful");
+          await send(authResult(authLoginUser, unb64(line)));
           continue;
         }
         const upper = line.toUpperCase();
@@ -89,7 +105,8 @@ function makeSocket(opts: FakeServerOptions, log: FakeServerLog, tls: boolean, c
           };
           return;
         } else if (upper.startsWith("AUTH PLAIN")) {
-          await send(opts.authReply ?? "235 2.7.0 Authentication successful");
+          const [, user = "", pass = ""] = unb64(line.slice("AUTH PLAIN ".length)).split("\u0000");
+          await send(authResult(user, pass));
         } else if (upper === "AUTH LOGIN") {
           authLoginStep = 1;
           await send("334 VXNlcm5hbWU6");

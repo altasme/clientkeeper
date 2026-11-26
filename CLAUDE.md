@@ -11,6 +11,7 @@
 
 - **ClientKeeper is the source of truth.** A client's stage and offer visibility are derived from data only staff can write here. `clienthub` reads this data but has no path to mutate stage/offer/plan.
 - **Zero public endpoints.** Every route in this app requires an authenticated, role-checked WorkOS session. There is no anonymous entry point — payment webhooks, invitation callbacks, and all client-facing traffic live in `clienthub`, not here. This is deliberate isolation: a bug in `clienthub`'s client-facing code has no code path into anything here.
+  - **Amended [2026-11-26], §36:** one deliberate exception. `/api/mail-client/*` lets the owner of a client-hosted mailbox sign in with that mailbox's own password (`POST /api/mail-client/login` is reachable without a session) and use only that mailbox. It is a separate session mechanism that grants nothing under `/api/app/*`, and every `/api/app/*` route still requires a staff session. Read §36 before touching either side.
 - Not a monorepo with `clienthub` — separate repo, separate deployment, connected only through the shared D1 database (see `clienthub/CLAUDE.md` §3 for the binding setup — both projects must bind the *same* database id under variable name `DB`).
 
 ---
@@ -1101,3 +1102,152 @@ So there is still **no real Z.com adapter** (`provider/zcom.ts` does not exist).
 2. Add its SMTP login to the mail worker's `MAIL_SMTP_PROFILES_JSON` secret under the exact key shown (`{"<key>": {"host","port","security","username","password"}}`), and the same on the Pages project if staff send from it in `/mail`; redeploy.
 3. New domain: publish Z.com's MX/SPF/DKIM in Cloudflare DNS.
 4. Inbound sync does nothing until a real Z.com adapter exists (credentials + a token mechanism).
+
+## 36. Client mailbox login: a client reads and sends their own mail at `/mail/client` [2026-11-26]
+
+A client whose mailbox Altaventures hosts (§34/§35) signs in with that mailbox's address and its **real password**, and gets a Gmail-style view of **that one mailbox only**. This is the first non-staff principal in this app (§0 amended). Keeping it isolated from the staff session matters more than anything else here. That isolation is enforced in code, not by convention, and is tested directly.
+
+### 36.1 How a client session is isolated from a staff session
+
+`functions/_lib/mailClient/session.ts` has three independent layers. Any one of them is enough on its own:
+1. **Different cookie name.** The staff cookie is `ck_session`. Only `verifySessionCookie` (`functions/_lib/session.ts`) reads it, and only `functions/api/app/_middleware.ts` calls that. The client cookie is `ck_mail_client_session`. Only `verifyMailClientSessionCookie` reads it, and only `mailClientHandler` (`functions/_lib/mailClient/handler.ts`) and the login route call that. A header that carries the client cookie twice is refused.
+2. **Different signed message.** Staff cookies sign `HMAC(SESSION_SECRET, payload)`. Client cookies sign `HMAC(SESSION_SECRET, "client_mail_session.v1." + payload)`. A value copied under the other cookie's name fails the signature check, even though both use the same secret.
+3. **Different payload shape.** A client payload needs `kind: "client_mail_session"`, `mailAccountId`, `emailAddress` and `issuedAt`, and must not contain `workosUserId`. A staff payload needs `workosUserId`.
+
+There is more on top of those three:
+- The client cookie is `Path=/api/mail-client; SameSite=Strict; HttpOnly; Secure`, with a 12 h lifetime. Browsers never send it to `/api/app/*`.
+- The client routes live in `functions/api/mail-client/`, outside `functions/api/app/`. The staff middleware never runs there, and the client guard never runs under `/api/app`.
+- **`functions/api/app/_middleware.ts` was not modified.** Tests confirm it already rejects every form of the client cookie: it returns 401 and the route is never reached.
+
+The client guard does not reuse `@altasme/webmail-kit`'s `mailHandler()`. That function reads `ctx.data.staffUser` and looks up access in `mail_account_access` by `users.id`, and neither applies to a client. The client guard resolves its own principal instead. It hands route code the same `{ ctx, db, user, access }` shape, with an access map that holds exactly one mailbox.
+
+### 36.2 Who can log in, and how each request is scoped
+
+**Which mailboxes are eligible** (`functions/_lib/mailClient/account.ts`). A mailbox is eligible only when all of these hold:
+- its `mail_accounts` row has `is_active = 1` and a non-empty `smtp_profile`;
+- an `email_mailboxes` row with `status = 'active'` links to it;
+- that row's `email_services` row has `status = 'active'`.
+
+Requiring the mailbox to be client-hosted is deliberate. It keeps Altaventures' own shared mailboxes (sales@ and the like) out. A password login there would bypass per-person access revocation: a departed employee who still knows the shared password could get straight back in.
+
+Eligibility is re-checked on **every** request. Any of these ends the session immediately (401, and the cookie is cleared):
+- suspending the service;
+- deleting or deactivating the mailbox;
+- removing its SMTP profile;
+- changing its address.
+
+**Scoping.** Every route takes the mailbox id from the verified session, never from the request:
+- List and search ignore any `accountId` query parameter.
+- Send returns 404 if the body carries a different `accountId`, and 404 for any `draftId`.
+- Another mailbox's messages, threads and attachments return 404, the same IDOR posture as the staff routes.
+- Attachments on drafts are refused even in the client's own mailbox. A staff member's private draft there stays invisible.
+
+**Routes** live in `functions/api/mail-client/`; their logic is in `functions/_lib/mailClient/routes.ts`:
+- `login`, `logout`, `me`
+- `messages`: list and search
+- `messages/:id`: GET, and PATCH for `isRead`/`isStarred`
+- `messages/:id/move`: to `inbox`, `archive`, `junk` or `trash`. There is no permanent delete.
+- `threads/:id`
+- `compose`: GET only, returns a prefill and creates nothing
+- `send`: new, reply, reply_all or forward
+- `attachments/:id` and `attachments/:id/preview`
+
+Nothing else exists for clients: no identities, access grants, labels, settings, signatures, retry, raw download, or any way to discover other accounts.
+
+**CSRF.** SameSite=Strict already applies. On top of that, every non-GET request must be `Content-Type: application/json`, or it gets 415. If it sends an `Origin` header, the origin must be this host, or it gets 403. This also blocks login CSRF through a `text/plain` form.
+
+**Audit.** Client actions go into `mail_events` with `actor_id = 'mailbox:<accountId>'`. Client sends are stored with `created_by = NULL`, because that column references `users`.
+
+### 36.3 Login (`functions/_lib/mailClient/login.ts`)
+
+**How the password is checked.** The login route runs a real SMTP AUTH against the mailbox's own server, using the package's new `verifySmtpLogin`. It sends AUTH, then QUIT, and nothing else. The server settings come from `resolveSmtpConfig` with the account's `smtp_profile`, the same lookup that sending uses.
+
+The AUTH username is the profile's configured username, and it **must equal the mailbox address**. If it doesn't, the login is refused without contacting SMTP. This stops a profile that was mistakenly pointed at a shared login from turning a shared password into a key to a client's mailbox.
+
+**What happens to the password.** It is never stored, logged, put in the cookie or echoed back. The tests scan every table for it.
+
+**Failures all look the same.** Every failure returns the same 401 body, padded to at least 1.5 s plus jitter. An unknown or ineligible address therefore looks like a wrong password.
+
+**Rate limit.** This Pages project has no KV or rate-limit binding, and the schema lives in clienthub, so no new table was added. Failed logins are written to the existing `mail_events` table as `client_mail_login_failed`, keyed by namespaced HMACs:
+- `account_id = client-login:email:<hmac>` (indexed with `created_at`)
+- `message_id = client-login:ip:<hmac>` (indexed)
+
+The limits are, per 15 minutes:
+- 5 failures per submitted address, whether or not it exists, so a lockout reveals nothing;
+- 20 failures per IP.
+
+SMTP outages and timeouts are logged as `client_mail_login_error` and don't count toward either limit. No raw address, IP or password is stored.
+
+### 36.4 What clients can't do yet, and why
+
+**Drafts, autosave and attachment upload are blocked by the schema.** `mail_drafts.created_by` is `NOT NULL REFERENCES users(id)`, and D1 enforces foreign keys. A client has no `users` row, and adding one would make them look like staff. Uploads hang off drafts, so they're blocked too. A test proves the foreign-key refusal. Enabling any of this needs a clienthub schema change first (a nullable `created_by` plus an owner-account column, or a separate table), then package and route work.
+
+Two smaller gaps follow from the same cause or from scope:
+- A forward doesn't carry the original message's attachments, because that hand-over goes through a draft.
+- There is no settings or signature management. This is a reasonable fast-follow. Prefill already uses the mailbox's existing signature.
+
+### 36.5 Package changes (`@altasme/webmail-kit`, pinned to the PR branch commit)
+
+- **`smtp.ts`** now has a shared `SmtpSession` handshake. Both `smtpSend` and the new `smtpVerifyLogin` use it. `smtpSend`'s behavior is unchanged, and all existing SMTP tests pass.
+- **`smtpTransport.ts`** gained `verifySmtpLogin`.
+- **`send.ts`** gained `queueOutboundMessageAsMailboxOwner`. It stores `created_by = NULL`, scopes the idempotency key and the hourly limit to the mailbox, and refuses drafts.
+- **`detail.ts`**: `loadMessageDetails` gained an `attachmentBasePath` parameter, so `cid:` images point at `/api/mail-client/attachments`.
+
+`mail-worker/package.json` stays on the previous pin, since it uses none of this.
+
+**After the webmail PR merges, re-pin `package.json` to the merge commit.** A squash merge changes the SHA.
+
+### 36.6 Frontend
+
+`/mail/client-login` and `/mail/client` are lazy-loaded pages (`src/pages/ClientMail*.tsx`). `App.tsx` mounts them **outside `MeProvider`**, because the staff bootstrap would send a client to the WorkOS login. They call only `src/lib/clientMailApi.ts`, which calls only `/api/mail-client/*`.
+
+**Reused**, since these components only render: `MailHtmlBody` (the sandboxed iframe), `RecipientInput`, `RichTextEditor` and `Toasts`.
+
+**Not reused:** `MailThreadView`, `MailComposer`, `MailAttachmentPreview` and `MailMessageList`. They call the staff `mailApi` directly or offer staff-only actions.
+
+### 36.7 How this was tested
+
+**Unit and route tests.** `npm test` passes **133/133**: the 84 existing tests plus 49 new ones in `tests/mailClient/`. The new ones also pass with `EMAIL_TESTS_USE_CLIENTHUB_SCHEMA=1`. They cover:
+- each guard against the other's cookies: renamed values, cross-signed payloads, and both cookies present at once;
+- tampered, expired, duplicated and wrong-secret cookies;
+- eligibility revoked mid-session;
+- cookie attributes and CSRF;
+- every route against another mailbox's ids, with checks that the database didn't change and with positive controls;
+- send scoping, idempotency-key ownership and the per-mailbox rate limit;
+- login: identical failures, lockouts, outage handling and password-leak scans;
+- `smtpVerifyLogin` against a fake SMTP server that only accepts the real credentials: PLAIN, LOGIN, STARTTLS, empty credentials, plaintext refusal and timeout.
+
+**Mutation checks** showed the tests catch real breakage:
+- removing the signing prefix fails 2 isolation tests;
+- dropping the client-hosted condition fails 2 tests;
+- widening the thread query fails a scoping test.
+
+**Live in workerd.** This ran `wrangler pages dev` with the canonical clienthub schema in a local D1 and R2, against a local SMTP server that checks credentials. All scratch files were removed afterwards. 34/34 scenarios passed, including:
+- real `cloudflare:sockets` AUTH for login;
+- a real send from the client's mailbox;
+- HTMLRewriter sanitization, with `cid:` images served from the client route;
+- full-text search scoped to the client's mailbox;
+- lockout.
+
+The SMTP log showed only AUTH and QUIT for logins, and no SMTP contact at all for ineligible or locked attempts. A scan of the D1 found no passwords.
+
+**Browser.** Playwright with Chrome at 1440 px and 390 px went through login, mailbox, a thread and a reply. There were zero requests to `/api/app/*` or `/api/auth-*`, no horizontal overflow, and no console errors apart from the expected 401 from the pre-login probe.
+
+**Build.** `npx tsc -p functions/tsconfig.json --noEmit`, `npm run build` and `npm run lint` are clean.
+
+### 36.8 Operator checklist
+
+1. Merge the webmail PR, re-pin `@altasme/webmail-kit` here to the merge commit, then merge this PR.
+2. **Make `MAIL_SMTP_PROFILES_JSON` available to the Pages project** (Settings → Variables and Secrets), not only to the mail worker. Login runs in a Pages Function. Without the profiles there, every client login fails with the generic error. §35.6 described adding it to Pages as optional; for client login it is required.
+3. Make sure each client profile's `username` is the mailbox's own address.
+4. Attach `mail.altasme.com` (§34.8). Clients then sign in at `https://mail.altasme.com/mail/client-login`.
+
+### 36.9 Residual risks and open questions
+
+- **Provider brute-force protection.** Each failed login is a failed SMTP AUTH from a Cloudflare egress IP. If Z.com's cPanel blocks IPs after repeated failures (cPHulk-style), a burst could block those IPs and break outbound mail for everyone. The per-address and per-IP limits reduce this risk but don't remove it.
+- **Lockout as denial of service.** Anyone can lock a mailbox's web login for 15 minutes with 5 wrong passwords. The mailbox itself and staff access are unaffected.
+- **Timing.** The 1.5 s floor hides fast failures. A real SMTP AUTH can take longer than that, though, so a very slow response still hints that an address is eligible.
+- **Password changes don't end sessions.** A session lasts up to 12 h after the provider password changes. Deactivating the mailbox or suspending the service ends it at once.
+- **Shared IP bucket.** Per-IP counting uses `CF-Connecting-IP`. Requests without that header all share one "unknown" bucket.
+- **Staff can read client mailboxes.** Staff who were granted `mail_account_access` to a client mailbox at fulfillment (§35) can read it. This round doesn't change that, but clients may not expect it.
+- **Not run against the real Z.com SMTP server.**

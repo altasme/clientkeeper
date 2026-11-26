@@ -8,10 +8,10 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
-    "test": "tsx --test tests/mail/*.test.ts tests/emailServices/*.test.ts"
+    "test": "tsx --test tests/mail/*.test.ts tests/emailServices/*.test.ts tests/mailClient/*.test.ts"
   },
   "dependencies": {
-    "@altasme/webmail-kit": "github:altasme/webmail#140a973cc58af2ebf93a78101c0f98cab55a5298",
+    "@altasme/webmail-kit": "github:altasme/webmail#1e1141849e79107e6ab3ec216b9a4107b7e65bf0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^7.18.2"
