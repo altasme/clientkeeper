@@ -17,13 +17,27 @@ export const RESERVATION_LEASE_MS = 2 * 60 * 1000;
 // SQL fragment: a mailbox row (alias `m`) that counts against the
 // allowance. `?` is bound to "now". Kept here, next to the TS version
 // below, so the two can't silently disagree.
-export const COUNTED_MAILBOX_SQL = `(m.status IN ('provisioning', 'active', 'needs_review', 'deleting') OR (m.status = 'reserved' AND m.reserved_until > ?))`;
+//
+// A 'reserved' row counts while its lease is live, OR when it has no
+// lease at all (reserved_until IS NULL). The NULL case is a client's
+// mailbox request awaiting manual fulfillment by staff
+// (requestMailboxByClient in engine.ts): it holds its slot indefinitely,
+// until staff fulfill or decline it. sweepStaleMailboxes never touches it
+// (`reserved_until <= ?` is never true for NULL) and runProvisioning
+// never claims it (it requires `reserved_until > ?`), so only the two
+// explicit staff actions can move it.
+export const COUNTED_MAILBOX_SQL = `(m.status IN ('provisioning', 'active', 'needs_review', 'deleting') OR (m.status = 'reserved' AND (m.reserved_until IS NULL OR m.reserved_until > ?)))`;
 
 export function mailboxCountsAgainstAllowance(status: MailboxStatus, reservedUntil: string | null, now: string): boolean {
   if (status === "provisioning" || status === "active" || status === "needs_review" || status === "deleting") return true;
-  if (status === "reserved") return reservedUntil !== null && reservedUntil > now;
+  if (status === "reserved") return reservedUntil === null || reservedUntil > now;
   return false;
 }
+
+// States staff may fulfill by hand (fulfillMailboxManually): a reservation
+// (a client request, or a staff one whose provider call never happened),
+// an outcome-unknown attempt, or a definite failure being recovered.
+export const MANUALLY_FULFILLABLE_STATUSES: MailboxStatus[] = ["reserved", "needs_review", "failed"];
 
 export interface Allowance {
   included: number;
@@ -31,7 +45,7 @@ export interface Allowance {
   overrides: number; // staff adjustments, may be negative
   total: number;
   active: number; // confirmed at the provider
-  pending: number; // reserved/provisioning/needs_review/deleting: held but not confirmed active
+  pending: number; // reserved (incl. client requests)/provisioning/needs_review/deleting: held but not confirmed active
   available: number;
 }
 

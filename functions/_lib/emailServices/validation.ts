@@ -28,6 +28,14 @@ export function normalizeLocalPart(raw: unknown): string | null {
   return l;
 }
 
+// Key into the mail worker's MAIL_SMTP_PROFILES_JSON secret
+// (mail_accounts.smtp_profile). An identifier only, never a credential.
+export function normalizeSmtpProfileKey(raw: unknown): string | null {
+  if (typeof raw !== "string") return null;
+  const k = raw.trim().toLowerCase();
+  return /^[a-z0-9][a-z0-9._-]{0,99}$/.test(k) ? k : null;
+}
+
 export function validateMailboxPassword(raw: unknown): { ok: true; password: string } | { ok: false; error: string } {
   if (typeof raw !== "string") return { ok: false, error: "A password is required." };
   if (raw.length < 10) return { ok: false, error: "Password must be at least 10 characters." };

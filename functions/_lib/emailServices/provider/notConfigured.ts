@@ -71,6 +71,15 @@ export class NotConfiguredProvider implements EmailHostingProvider {
   getUsage() {
     return this.fail<never>();
   }
+  listMessages() {
+    return this.fail<never>();
+  }
+  getMessageDetails() {
+    return this.fail<never>();
+  }
+  getAttachment() {
+    return this.fail<never>();
+  }
 }
 
 export function providerDisplayName(name: ProviderName): string {

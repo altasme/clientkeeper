@@ -195,6 +195,25 @@ export const deleteEmailMailbox = (id: string, mailboxId: string, reason: string
 export const discardEmailMailbox = (id: string, mailboxId: string) => apiFetch<unknown>(mb(id, mailboxId, "discard"), post({}));
 export const resolveEmailMailbox = (id: string, mailboxId: string, resolution: "exists" | "absent", reason: string, providerMailboxId?: string) =>
   apiFetch<unknown>(mb(id, mailboxId, "resolve"), post({ resolution, reason, providerMailboxId }));
+// Manual fulfillment (CLAUDE.md §35). No password field, by design.
+export const fulfillEmailMailbox = (
+  id: string,
+  mailboxId: string,
+  body: { providerMailboxId: string; providerServiceId?: string; smtpProfileKey?: string; createBridgeAccount: boolean; bridgeDisplayName?: string }
+) => apiFetch<{ mailbox: EmailMailbox; mailAccountId: string | null; smtpProfile: string | null }>(mb(id, mailboxId, "fulfill"), post(body));
+export const declineEmailMailboxRequest = (id: string, mailboxId: string, reason: string) => apiFetch<{ mailbox: EmailMailbox }>(mb(id, mailboxId, "decline"), post({ reason }));
+
+// A client's request waiting for staff to create it by hand in Z.com.
+export const isClientRequest = (m: Pick<EmailMailbox, "status" | "createdByType">) => m.status === "reserved" && m.createdByType === "client";
+export const MANUALLY_FULFILLABLE: MailboxStatus[] = ["reserved", "needs_review", "failed"];
+
+// Default SMTP profile key for a mailbox: unique per service + mailbox
+// name, and within the server's allowed pattern ([a-z0-9._-]).
+export function defaultSmtpProfileKey(serviceId: string, address: string): string {
+  const local = address.split("@")[0] ?? "mailbox";
+  return `client-${serviceId.replace(/[^a-z0-9]/gi, "").slice(0, 8)}-${local}`.toLowerCase().replace(/[^a-z0-9._-]/g, "-").slice(0, 100);
+}
+
 export const transitionEmailService = (id: string, action: LifecycleAction, reason?: string, expiresAt?: string) =>
   apiFetch<unknown>(`${svc(id)}/lifecycle`, post({ action, reason, expiresAt }));
 export const syncEmailService = (id: string) =>

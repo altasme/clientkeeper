@@ -23,6 +23,7 @@ test("policy: counted statuses, allowance math, effective expiry, intervals", ()
   assert.equal(mailboxCountsAgainstAllowance("failed", null, now), false);
   assert.equal(mailboxCountsAgainstAllowance("reserved", "2026-11-25T00:01:00.000Z", now), true);
   assert.equal(mailboxCountsAgainstAllowance("reserved", "2026-11-24T00:00:00.000Z", now), false);
+  assert.equal(mailboxCountsAgainstAllowance("reserved", null, now), true, "a client request (no lease) holds its slot");
   assert.deepEqual(computeAllowance({ included: 10, additional: 5, overrides: 0, active: 4, pending: 0 }), { included: 10, additional: 5, overrides: 0, total: 15, active: 4, pending: 0, available: 11 });
   assert.equal(effectiveServiceStatus("active", "2026-01-01T00:00:00.000Z", now), "expired");
   assert.equal(effectiveServiceStatus("suspended", "2026-01-01T00:00:00.000Z", now), "suspended");
