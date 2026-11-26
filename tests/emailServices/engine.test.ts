@@ -33,7 +33,7 @@ test("the registry only ever returns the honest placeholder today", () => {
   assert.equal(p.status().configured, false);
 });
 
-test("placeholder: every operation fails not_configured / not_performed, never success", async () => {
+test("placeholder: every operation (incl. read-only message access) fails not_configured / not_performed, never success", async () => {
   const p = new NotConfiguredProvider("zcom");
   const ref = { providerServiceId: null, address: "a@b.ph", providerMailboxId: null };
   const results = await Promise.all([
@@ -46,6 +46,9 @@ test("placeholder: every operation fails not_configured / not_performed, never s
     p.configureForwarding({ ...ref, forwardTo: ["x@y.ph"], keepCopy: true }),
     p.getServiceDetails({ providerServiceId: null }),
     p.getUsage({ providerServiceId: null }),
+    p.listMessages({ providerServiceId: null, providerMailboxId: "m1" }),
+    p.getMessageDetails({ providerServiceId: null, providerMailboxId: "m1", providerMessageId: "x" }),
+    p.getAttachment({ providerServiceId: null, providerMailboxId: "m1", providerMessageId: "x", attachmentId: "a" }),
   ]);
   for (const r of results) {
     assert.equal(r.ok, false);

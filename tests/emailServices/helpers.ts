@@ -92,6 +92,15 @@ export class FakeProvider implements EmailHostingProvider {
   getUsage() {
     return this.nope<never>();
   }
+  listMessages() {
+    return this.nope<never>();
+  }
+  getMessageDetails() {
+    return this.nope<never>();
+  }
+  getAttachment() {
+    return this.nope<never>();
+  }
 }
 
 export const PASSWORD = "Sup3rSecretPass";

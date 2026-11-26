@@ -1,16 +1,19 @@
 import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import Modal from "../components/Modal";
+import FulfillMailboxModal from "../components/emailServices/FulfillMailboxModal";
 import { useMe } from "../lib/MeContext";
 import {
   MAILBOX_STATUS_LABEL,
   MAILBOX_STATUS_STYLE,
+  MANUALLY_FULFILLABLE,
   SERVICE_STATUS_LABEL,
   SERVICE_STATUS_STYLE,
   addEmailDomain,
   adjustEmailEntitlement,
   assignEmailPlan,
   canManageEmail,
+  declineEmailMailboxRequest,
   deleteEmailMailbox,
   discardEmailMailbox,
   fetchEmailPlans,
@@ -20,6 +23,7 @@ import {
   formatDateTime,
   formatPhp,
   formatStorage,
+  isClientRequest,
   provisionEmailMailbox,
   removeEmailDomain,
   resolveEmailMailbox,
@@ -187,6 +191,7 @@ export default function EmailServiceDetailPage() {
     return warn ? { kind: "warn", text: warn } : null;
   });
   const [prompt, setPrompt] = useState<PromptState | null>(null);
+  const [fulfilling, setFulfilling] = useState<EmailMailbox | null>(null);
   const [logs, setLogs] = useState<{ audit: AuditEntry[]; operations: OperationEntry[] } | null>(null);
   const [showHidden, setShowHidden] = useState(false);
   const [syncResult, setSyncResult] = useState<{ ok: boolean; error: { code: string; message: string } | null; discrepancies: Discrepancy[] } | null>(null);
@@ -260,6 +265,37 @@ export default function EmailServiceDetailPage() {
   const mailboxActions = (m: EmailMailbox) => {
     const out: ReactNode[] = [];
     if (!canManage || cancelled) return out;
+    // Manual fulfillment (CLAUDE.md §35): the mailbox was created by hand
+    // in Z.com's dashboard. Offered on any reserved/needs-review/failed row
+    // (a client request, or recovering a staff attempt).
+    if (MANUALLY_FULFILLABLE.includes(m.status)) {
+      out.push(
+        <button key="fulfill" type="button" className={secondaryBtn} onClick={() => setFulfilling(m)}>
+          Fulfill manually
+        </button>
+      );
+    }
+    if (isClientRequest(m)) {
+      out.push(
+        <button
+          key="decline"
+          type="button"
+          className={dangerBtn}
+          onClick={() =>
+            setPrompt({
+              title: `Decline request for ${m.address}`,
+              description: "Releases the slot and the address; the client can request again.",
+              fields: [{ name: "reason", label: "Reason", type: "textarea", required: true }],
+              confirmLabel: "Decline request",
+              danger: true,
+              onConfirm: (v) => run(() => declineEmailMailboxRequest(s.id, m.id, v.reason!), `Request for ${m.address} declined.`),
+            })
+          }
+        >
+          Decline
+        </button>
+      );
+    }
     if (m.status === "failed") {
       out.push(
         <button
@@ -511,10 +547,12 @@ export default function EmailServiceDetailPage() {
                   <td className="py-2 pr-4">
                     <span className="font-medium text-ink">{m.address}</span>
                     <span className="ml-2 text-xs text-ink/50">{m.isPrimary ? "Primary" : "Standard"}</span>
+                    {isClientRequest(m) && <span className="ml-2 whitespace-nowrap rounded-full bg-violet-100 px-2 py-0.5 text-xs font-semibold text-violet-700">Requested by client</span>}
+                    {m.bridgedMailAccountId && <p className="mt-0.5 text-xs text-ink/50">Linked to webmail</p>}
                     {m.lastError && <p className="mt-1 max-w-sm text-xs text-red-600">{m.lastError}</p>}
                   </td>
                   <td className="py-2 pr-4">
-                    <span className={`whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-semibold ${MAILBOX_STATUS_STYLE[m.status]}`}>{MAILBOX_STATUS_LABEL[m.status]}</span>
+                    <span className={`whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-semibold ${MAILBOX_STATUS_STYLE[m.status]}`}>{isClientRequest(m) ? "Awaiting setup" : MAILBOX_STATUS_LABEL[m.status]}</span>
                   </td>
                   <td className="whitespace-nowrap py-2 pr-4 text-ink/60">{formatDate(m.createdAt)}</td>
                   <td className="py-2 pr-4 font-mono text-xs text-ink/60">{m.providerMailboxId ?? "—"}</td>
@@ -851,6 +889,16 @@ export default function EmailServiceDetailPage() {
       </Card>
 
       <PromptModal prompt={prompt} onClose={() => setPrompt(null)} />
+      <FulfillMailboxModal
+        serviceId={s.id}
+        serviceProviderId={s.provider.providerServiceId}
+        mailbox={fulfilling}
+        onClose={() => setFulfilling(null)}
+        onDone={(text) => {
+          setNotice({ kind: "ok", text });
+          load();
+        }}
+      />
     </div>
   );
 }

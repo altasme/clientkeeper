@@ -3,7 +3,7 @@
 
 import { activationChecklist, assignPlan, addDomain, getAllowance, loadService, sweepExpiredServices, sweepStaleMailboxes, type DomainRow, type EngineResult, type MailboxRow, type ServiceRow } from "./engine";
 import { auditStatement, clientActivityStatement, type Actor } from "./logs";
-import { effectiveServiceStatus, type Allowance } from "./policy";
+import { COUNTED_MAILBOX_SQL, effectiveServiceStatus, type Allowance } from "./policy";
 import { getEmailProvider, providerDisplayName } from "./provider";
 
 const nowIso = () => new Date().toISOString();
@@ -126,7 +126,7 @@ export async function listServices(db: D1Database, filters: { status?: string | 
          COALESCE((SELECT SUM(quantity) FROM email_service_entitlements e WHERE e.service_id = s.id AND e.kind = 'addon'), 0) AS additional,
          COALESCE((SELECT SUM(quantity) FROM email_service_entitlements e WHERE e.service_id = s.id AND e.kind = 'override'), 0) AS overrides,
          (SELECT COUNT(*) FROM email_mailboxes m WHERE m.service_id = s.id AND m.status = 'active') AS active_count,
-         (SELECT COUNT(*) FROM email_mailboxes m WHERE m.service_id = s.id AND (m.status IN ('provisioning', 'needs_review', 'deleting') OR (m.status = 'reserved' AND m.reserved_until > ?))) AS pending_count,
+         (SELECT COUNT(*) FROM email_mailboxes m WHERE m.service_id = s.id AND m.status <> 'active' AND ${COUNTED_MAILBOX_SQL}) AS pending_count,
          (SELECT COUNT(*) FROM email_mailboxes m WHERE m.service_id = s.id AND m.status = 'failed') AS failed_count,
          (SELECT COUNT(*) FROM email_mailboxes m WHERE m.service_id = s.id AND m.status = 'needs_review') AS review_count
        FROM email_services s JOIN clients c ON c.id = s.client_id

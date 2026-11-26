@@ -24,6 +24,7 @@ import {
   COUNTED_MAILBOX_SQL,
   LIFECYCLE_FROM,
   LIFECYCLE_REQUIRES_REASON,
+  MANUALLY_FULFILLABLE_STATUSES,
   PROVISIONABLE_SERVICE_STATUSES,
   RESERVATION_LEASE_MS,
   addInterval,
@@ -38,6 +39,7 @@ import {
 import { auditStatement, clientActivityStatement, provisioningLogStatement, type Actor } from "./logs";
 import { PROVIDER_INBOUND_SOURCE, callProvider, type EmailHostingProvider, type ProviderError, type ProviderMailbox } from "./provider";
 import { reconcileMailboxes, type Discrepancy } from "./reconcile";
+import { normalizeLocalPart, normalizeSmtpProfileKey } from "./validation";
 
 export type EngineResult<T> = { ok: true; value: T } | { ok: false; status: number; error: string; code: string; details?: Record<string, unknown> };
 
@@ -556,6 +558,351 @@ export async function resolveMailbox(
   if ((res!.meta.changes ?? 0) === 0) return fail(409, "changed", "This mailbox changed while you were working. Refresh and try again.");
   const final = (await db.prepare(`SELECT * FROM email_mailboxes WHERE id = ?`).bind(mailbox.id).first<MailboxRow>())!;
   return { ok: true, value: { mailbox: final } };
+}
+
+// ---------------------------------------------------------------------------
+// Manual fulfillment (CLAUDE.md §35)
+//
+// There is no real Z.com adapter. Until there is, a mailbox is created by a
+// human in Z.com's own dashboard, and these three functions are the
+// software around that manual step:
+//   requestMailboxByClient  client asks for a mailbox  -> reserved (no lease, held)
+//   fulfillMailboxManually  staff record what they made -> active (+ webmail bridge)
+//   declineMailboxRequest   staff turn a request down   -> discarded (address freed)
+// None of them calls a provider, and none of them accepts or stores a
+// password: the mailbox password is set in Z.com's dashboard, and the SMTP
+// password lives only in the mail worker's MAIL_SMTP_PROFILES_JSON secret.
+
+export interface ClientRequestInput {
+  serviceId: string;
+  clientId: string;
+  domainId: string;
+  localPart: string;
+  isPrimary: boolean;
+  idempotencyKey: string | null;
+  now?: string;
+}
+
+// A client-originated reservation. Never calls a provider and never runs
+// provisioning: the row stays 'reserved' with reserved_until = NULL, which
+// holds the slot indefinitely (see COUNTED_MAILBOX_SQL in policy.ts) until
+// staff fulfill or decline it.
+//
+// One outstanding request per service at a time. A second request while a
+// client-requested 'reserved' row exists is refused (request_pending),
+// checked inside the same INSERT as ownership and capacity, so two
+// simultaneous requests can't both get in. Reasoning: a request is a
+// manual job for a human, and letting a client queue up several at once
+// would let one service sit on its whole allowance in unfulfilled
+// requests and bury staff in a batch they have to work through by hand.
+// Once the first is fulfilled or declined, the next can be made.
+//
+// Allowed while the service is in a provisionable state (pending_setup,
+// active, provisioning_error), the same rule staff provisioning uses, NOT
+// clientCanManageMailboxes() (active only): a new service can't be
+// activated until it has an active mailbox, so an active-only rule would
+// leave a new client unable to ask for their first one. Every request is
+// reviewed by staff before anything is created, so this is not
+// self-service management.
+export async function requestMailboxByClient(db: D1Database, input: ClientRequestInput): Promise<EngineResult<{ mailbox: MailboxRow; duplicateRequest: boolean }>> {
+  const now = input.now ?? nowIso();
+  const actor: Actor = { type: "client", id: input.clientId };
+  const localPart = normalizeLocalPart(input.localPart);
+  if (!localPart) return fail(400, "invalid_local_part", "The mailbox name may use letters, numbers, dots, dashes, underscores and plus signs.");
+
+  const lookupExisting = async (): Promise<EngineResult<{ mailbox: MailboxRow; duplicateRequest: boolean }> | null> => {
+    if (!input.idempotencyKey) return null;
+    const existing = await db.prepare(`SELECT * FROM email_mailboxes WHERE idempotency_key = ?`).bind(input.idempotencyKey).first<MailboxRow>();
+    if (!existing) return null;
+    if (existing.service_id !== input.serviceId || existing.created_by !== input.clientId) return fail(409, "idempotency_conflict", "This request key was already used for a different request.");
+    return { ok: true, value: { mailbox: existing, duplicateRequest: true } };
+  };
+  const repeat = await lookupExisting();
+  if (repeat) return repeat;
+
+  // Not found and not yours read the same, so a client can't probe for
+  // other clients' service ids.
+  const service = await db.prepare(`SELECT * FROM email_services WHERE id = ? AND client_id = ?`).bind(input.serviceId, input.clientId).first<ServiceRow>();
+  if (!service) return fail(404, "service_not_found", "Email service not found.");
+
+  await sweepStaleMailboxes(db, input.serviceId, now);
+
+  const domain = await db
+    .prepare(`SELECT * FROM email_domains WHERE id = ? AND service_id = ? AND status = 'active'`)
+    .bind(input.domainId, input.serviceId)
+    .first<DomainRow>();
+  if (!domain) return fail(404, "domain_not_found", "That domain is not assigned to this service.");
+
+  const id = crypto.randomUUID();
+  const address = `${localPart}@${domain.domain}`;
+  let changes: number;
+  try {
+    // THE client reservation: the same statement as provisionMailbox's,
+    // plus `s.client_id = ?` (the real ownership boundary, enforced by the
+    // statement that writes, not by the lookup above) and the
+    // one-pending-request rule. reserved_until is NULL on purpose.
+    const res = await db
+      .prepare(
+        `INSERT INTO email_mailboxes (id, service_id, domain_id, local_part, address, is_primary, status, inbound_source, provider_service_id, idempotency_key, reserved_until, created_by, created_by_type, created_at, updated_at)
+         SELECT ?, s.id, d.id, ?, ?, ?, 'reserved', ?, s.provider_service_id, ?, NULL, ?, 'client', ?, ?
+         FROM email_services s
+         JOIN email_domains d ON d.id = ? AND d.service_id = s.id AND d.status = 'active'
+         WHERE s.id = ?
+           AND s.client_id = ?
+           AND s.status IN (${PROVISIONABLE_SQL_LIST})
+           AND s.plan_id IS NOT NULL
+           AND (s.expires_at IS NULL OR s.expires_at > ?)
+           AND NOT EXISTS (SELECT 1 FROM email_mailboxes p WHERE p.service_id = s.id AND p.status = 'reserved' AND p.created_by_type = 'client')
+           AND ${TOTAL_ALLOWANCE_SQL} > ${COUNTED_SQL}`
+      )
+      .bind(
+        id,
+        localPart,
+        address,
+        input.isPrimary ? 1 : 0,
+        PROVIDER_INBOUND_SOURCE[service.provider],
+        input.idempotencyKey,
+        input.clientId,
+        now,
+        now,
+        input.domainId,
+        input.serviceId,
+        input.clientId,
+        now,
+        now
+      )
+      .run();
+    changes = res.meta.changes ?? 0;
+  } catch (err) {
+    // Same handling as provisionMailbox: a repeat can collide on any
+    // unique index first, so look the key up on any unique violation.
+    if (input.idempotencyKey && String(err instanceof Error ? err.message : err).includes("UNIQUE constraint failed")) {
+      const again = await lookupExisting();
+      if (again) return again;
+    }
+    if (isUniqueViolation(err, "address")) return fail(409, "address_taken", `${address} is already taken. Choose a different name.`);
+    if (isUniqueViolation(err, "service_id")) return fail(409, "primary_exists", "This service already has a primary mailbox.");
+    throw err;
+  }
+
+  if (changes === 0) {
+    const pending = await db
+      .prepare(`SELECT address FROM email_mailboxes WHERE service_id = ? AND status = 'reserved' AND created_by_type = 'client' LIMIT 1`)
+      .bind(input.serviceId)
+      .first<{ address: string }>();
+    if (pending) return fail(409, "request_pending", `Your request for ${pending.address} is still being set up. You can request another mailbox once it's done.`);
+    return explainReservationFailure(db, input.serviceId, now);
+  }
+
+  const mailbox = (await db.prepare(`SELECT * FROM email_mailboxes WHERE id = ?`).bind(id).first<MailboxRow>())!;
+  await db.batch([
+    auditStatement(db, { serviceId: input.serviceId, mailboxId: id, actor, action: "mailbox_requested_by_client", after: { address, isPrimary: input.isPrimary }, now }),
+    clientActivityStatement(db, service.client_id, "email_mailbox_requested", `Requested mailbox ${address}`, null, now),
+  ]);
+  return { ok: true, value: { mailbox, duplicateRequest: false } };
+}
+
+export interface ManualFulfillmentInput {
+  serviceId: string;
+  mailboxId: string;
+  // Z.com's own ids for the mailbox staff created in its dashboard.
+  providerMailboxId: string;
+  providerServiceId?: string | null;
+  // Name of the entry in the mail worker's MAIL_SMTP_PROFILES_JSON secret
+  // that will hold this mailbox's SMTP login. Just an identifier: the
+  // secret's value is configured outside this codebase. Required when
+  // createBridgeAccount is true.
+  smtpProfileKey: string | null;
+  createBridgeAccount: boolean;
+  bridgeDisplayName?: string | null;
+  actor: Actor;
+  now?: string;
+  // Deliberately NO password field. Do not add one.
+}
+
+export interface ManualFulfillmentOutcome {
+  mailbox: MailboxRow;
+  mailAccountId: string | null;
+  // The smtp_profile actually on the bridge account. Differs from the key
+  // passed in only when an existing mail_accounts row already had one.
+  smtpProfile: string | null;
+}
+
+// reserved | needs_review | failed -> active, using staff-entered provider
+// ids instead of a provider call. Staff are asserting ground truth: they
+// created the mailbox in Z.com's dashboard themselves.
+//
+// Fulfilling twice is rejected: a second call on an already-active
+// mailbox returns 409 already_fulfilled and writes nothing. The
+// transition itself is one conditional UPDATE, so two simultaneous
+// fulfillments can't both win.
+//
+// A 'failed' mailbox no longer counts against the allowance, so reviving
+// one re-checks service state, domain and capacity inside that same
+// UPDATE (same conditions as retryMailbox). 'reserved' and 'needs_review'
+// rows already hold their slot.
+export async function fulfillMailboxManually(db: D1Database, input: ManualFulfillmentInput): Promise<EngineResult<ManualFulfillmentOutcome>> {
+  const now = input.now ?? nowIso();
+  if (input.actor.type !== "staff" || !input.actor.id) return fail(403, "staff_only", "Only staff can fulfill a mailbox.");
+
+  const providerMailboxId = typeof input.providerMailboxId === "string" ? input.providerMailboxId.trim().slice(0, 200) : "";
+  if (!providerMailboxId) return fail(400, "provider_mailbox_id_required", "Enter the Z.com mailbox id.");
+  const providerServiceId = typeof input.providerServiceId === "string" && input.providerServiceId.trim() ? input.providerServiceId.trim().slice(0, 200) : null;
+  let smtpProfileKey: string | null = null;
+  if (input.createBridgeAccount) {
+    smtpProfileKey = normalizeSmtpProfileKey(input.smtpProfileKey);
+    if (!smtpProfileKey) return fail(400, "invalid_smtp_profile_key", "The SMTP profile key may use lowercase letters, numbers, dots, dashes and underscores (max 100 characters).");
+  }
+
+  await sweepStaleMailboxes(db, input.serviceId, now);
+  const service = await loadService(db, input.serviceId);
+  if (!service) return fail(404, "service_not_found", "Email service not found.");
+  if (!staffCanManageMailboxes(service.status)) return fail(409, "service_cancelled", "This service has been decommissioned.");
+  const before = await loadMailbox(db, input.serviceId, input.mailboxId);
+  if (!before) return fail(404, "mailbox_not_found", "Mailbox not found.");
+  if (before.status === "active") return fail(409, "already_fulfilled", "This mailbox is already active.");
+  if (!MANUALLY_FULFILLABLE_STATUSES.includes(before.status)) {
+    return fail(409, "not_fulfillable", `Only reserved, needs-review or failed mailboxes can be fulfilled (this one is ${before.status.replace("_", " ")}).`);
+  }
+
+  const claimed = await db
+    .prepare(
+      `UPDATE email_mailboxes SET status = 'active', provider_mailbox_id = ?,
+         provider_service_id = COALESCE(?, provider_service_id, (SELECT s.provider_service_id FROM email_services s WHERE s.id = email_mailboxes.service_id)),
+         provisioned_at = ?, reserved_until = NULL, failure_code = NULL, last_error = NULL, updated_at = ?
+       WHERE id = ? AND service_id = ?
+         AND (
+           status IN ('reserved', 'needs_review')
+           OR (status = 'failed' AND EXISTS (
+             SELECT 1 FROM email_services s
+             JOIN email_domains d ON d.id = email_mailboxes.domain_id AND d.service_id = s.id AND d.status = 'active'
+             WHERE s.id = email_mailboxes.service_id
+               AND s.status IN (${PROVISIONABLE_SQL_LIST})
+               AND s.plan_id IS NOT NULL
+               AND (s.expires_at IS NULL OR s.expires_at > ?)
+               AND ${TOTAL_ALLOWANCE_SQL} > ${COUNTED_SQL}
+           ))
+         )
+       RETURNING *`
+    )
+    .bind(providerMailboxId, providerServiceId, now, now, before.id, input.serviceId, now, now)
+    .first<MailboxRow>();
+
+  if (!claimed) {
+    const current = await loadMailbox(db, input.serviceId, input.mailboxId);
+    if (current?.status === "active") return fail(409, "already_fulfilled", "This mailbox is already active.");
+    if (current?.status === "failed") {
+      const domain = await db.prepare(`SELECT status FROM email_domains WHERE id = ?`).bind(current.domain_id).first<{ status: string }>();
+      if (domain?.status !== "active") return fail(409, "domain_removed", "This mailbox's domain is no longer assigned to the service.");
+      return explainReservationFailure(db, input.serviceId, now);
+    }
+    return fail(409, "changed", "This mailbox changed while you were working. Refresh and try again.");
+  }
+
+  const statements: D1PreparedStatement[] = [];
+  if (input.createBridgeAccount) {
+    const client = await db.prepare(`SELECT business_name FROM clients WHERE id = ?`).bind(service.client_id).first<{ business_name: string }>();
+    const displayName = (input.bridgeDisplayName?.trim() || client?.business_name?.trim() || claimed.address).slice(0, 200);
+    // mail_accounts.email_address is UNIQUE: reuse an existing row (e.g.
+    // from an earlier attempt) instead of failing. An existing row keeps
+    // its own smtp_profile; it is only filled in if it had none.
+    statements.push(
+      db
+        .prepare(
+          `INSERT INTO mail_accounts (id, email_address, display_name, smtp_profile, inbound_enabled, outbound_enabled, is_active, created_by, created_at, updated_at)
+           VALUES (?, ?, ?, ?, 1, 1, 1, ?, ?, ?) ON CONFLICT(email_address) DO NOTHING`
+        )
+        .bind(crypto.randomUUID(), claimed.address, displayName, smtpProfileKey, input.actor.id, now, now),
+      db.prepare(`UPDATE mail_accounts SET smtp_profile = ?, updated_at = ? WHERE email_address = ? AND smtp_profile IS NULL`).bind(smtpProfileKey, now, claimed.address),
+      db
+        .prepare(
+          `INSERT INTO mail_account_access (account_id, user_id, can_send, granted_by, created_at)
+           SELECT id, ?, 1, ?, ? FROM mail_accounts WHERE email_address = ? ON CONFLICT(account_id, user_id) DO NOTHING`
+        )
+        .bind(input.actor.id, input.actor.id, now, claimed.address),
+      db.prepare(`UPDATE email_mailboxes SET mail_account_id = (SELECT id FROM mail_accounts WHERE email_address = ?) WHERE id = ?`).bind(claimed.address, claimed.id)
+    );
+  }
+  statements.push(
+    db.prepare(`UPDATE email_services SET status = 'pending_setup', status_reason = NULL, updated_at = ? WHERE id = ? AND status = 'provisioning_error'`).bind(now, service.id),
+    provisioningLogStatement(db, {
+      serviceId: service.id,
+      mailboxId: claimed.id,
+      provider: service.provider,
+      operation: "manual_fulfillment",
+      error: null,
+      details: { previousStatus: before.status, providerMailboxId, providerServiceId: claimed.provider_service_id, bridged: input.createBridgeAccount, smtpProfileKey },
+      actor: input.actor,
+      now,
+    })
+  );
+
+  try {
+    await db.batch(statements);
+  } catch (err) {
+    // The bridge/log batch failed after the mailbox was already marked
+    // active. Put the mailbox back as it was so staff can simply try
+    // again, rather than leave an active mailbox with no bridge and no log.
+    await db
+      .prepare(
+        `UPDATE email_mailboxes SET status = ?, provider_mailbox_id = ?, provider_service_id = ?, provisioned_at = ?, reserved_until = ?, failure_code = ?, last_error = ?, updated_at = ?
+         WHERE id = ? AND status = 'active' AND mail_account_id IS NULL`
+      )
+      .bind(before.status, before.provider_mailbox_id, before.provider_service_id, before.provisioned_at, before.reserved_until, before.failure_code, before.last_error, nowIso(), before.id)
+      .run()
+      .catch(() => undefined);
+    throw err;
+  }
+
+  const final = (await db.prepare(`SELECT * FROM email_mailboxes WHERE id = ?`).bind(claimed.id).first<MailboxRow>())!;
+  const account = final.mail_account_id
+    ? await db.prepare(`SELECT smtp_profile FROM mail_accounts WHERE id = ?`).bind(final.mail_account_id).first<{ smtp_profile: string | null }>()
+    : null;
+
+  await db.batch([
+    auditStatement(db, {
+      serviceId: service.id,
+      mailboxId: final.id,
+      actor: input.actor,
+      action: "mailbox_fulfilled_manually",
+      before: { status: before.status },
+      after: { address: final.address, providerMailboxId: final.provider_mailbox_id, providerServiceId: final.provider_service_id, mailAccountId: final.mail_account_id, smtpProfileKey: account?.smtp_profile ?? null },
+      now,
+    }),
+    clientActivityStatement(db, service.client_id, "email_mailbox_fulfilled", `Mailbox ${final.address} is set up`, input.actor.id, now),
+  ]);
+  return { ok: true, value: { mailbox: final, mailAccountId: final.mail_account_id, smtpProfile: account?.smtp_profile ?? null } };
+}
+
+// A client's pending request -> discarded. Only for client requests
+// (status 'reserved', created_by_type 'client'): staff reservations
+// already have retry/discard. 'discarded' rather than 'failed' because
+// there is nothing to retry, and because 'discarded' is excluded from the
+// live-address index, so the same name can be requested again at once.
+export async function declineMailboxRequest(db: D1Database, input: { serviceId: string; mailboxId: string; reason: string; actor: Actor; now?: string }): Promise<EngineResult<{ mailbox: MailboxRow }>> {
+  const now = input.now ?? nowIso();
+  if (input.actor.type !== "staff" || !input.actor.id) return fail(403, "staff_only", "Only staff can decline a mailbox request.");
+  const reason = typeof input.reason === "string" ? input.reason.trim().slice(0, 500) : "";
+  if (!reason) return fail(400, "reason_required", "A reason is required to decline a request.");
+
+  const res = await db
+    .prepare(
+      `UPDATE email_mailboxes SET status = 'discarded', failure_code = 'declined_by_staff', last_error = ?, reserved_until = NULL, updated_at = ?
+       WHERE id = ? AND service_id = ? AND status = 'reserved' AND created_by_type = 'client' RETURNING *`
+    )
+    .bind(reason, now, input.mailboxId, input.serviceId)
+    .first<MailboxRow>();
+  if (!res) {
+    const existing = await loadMailbox(db, input.serviceId, input.mailboxId);
+    if (!existing) return fail(404, "mailbox_not_found", "Mailbox not found.");
+    return fail(409, "not_a_pending_request", "Only a client's pending request can be declined.");
+  }
+  const service = (await loadService(db, input.serviceId))!;
+  await db.batch([
+    auditStatement(db, { serviceId: input.serviceId, mailboxId: res.id, actor: input.actor, action: "mailbox_request_declined", before: { status: "reserved" }, after: { status: "discarded", address: res.address }, reason, now }),
+    clientActivityStatement(db, service.client_id, "email_mailbox_request_declined", `Mailbox request ${res.address} declined: ${reason}`.slice(0, 500), input.actor.id, now),
+  ]);
+  return { ok: true, value: { mailbox: res } };
 }
 
 // ---------------------------------------------------------------------------

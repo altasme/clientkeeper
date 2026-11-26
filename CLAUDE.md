@@ -1050,3 +1050,54 @@ A mailbox or domain addressed through the wrong service returns 404.
   - a configurable expiry "grace" policy (expiry blocks new mailboxes and changes nothing else);
   - admin UI for password reset and forwarding (they exist in the interface).
 - **Production:** run clienthub's schema migration before deploying this; nothing here has run against production D1.
+
+## 35. Email Services: manual Z.com fulfillment, client mailbox requests, and the inbound poll-sync bridge [2026-11-26]
+
+The operator's decision, verbatim: *"i will set up the email account in z.com and provide you the needed infos. Then the client: - If they have an email account allowance, they can request it along with their requested email account name, then i will process it manually. Then I'll just put it in clientkeeper."* plus *"we'll set aside the adaptor for this process, you still configure the things on the cloudflare side. Whatever we can do on clientkeeper to ease the process, we do it."*
+
+So there is still **no real Z.com adapter** (`provider/zcom.ts` does not exist). A human creates each mailbox in Z.com's own dashboard; this round builds the software around that step. Mid-round correction: the client-facing side is a separate, not-yet-specified platform, **not clienthub** — nothing was built in clienthub, and no client route calls `requestMailboxByClient` yet.
+
+### 35.1 Engine (`engine.ts`, "Manual fulfillment" section)
+
+| Function | Transition | Notes |
+|---|---|---|
+| `requestMailboxByClient` | → `reserved`, `reserved_until = NULL`, `created_by_type = 'client'` | Never calls a provider. Same atomic `INSERT … SELECT` as `provisionMailbox`, plus `s.client_id = ?` (the real ownership boundary) and **one pending client request per service** (`NOT EXISTS` in the same statement). Allowed in the provisionable states (not `clientCanManageMailboxes()`'s active-only rule, which would block a new service's first mailbox). Idempotency/`address_taken`/`primary_exists` handled as in `provisionMailbox`. |
+| `fulfillMailboxManually` | `reserved` \| `needs_review` \| `failed` → `active` | Staff only (checked in the function and the route). Staff-entered `provider_mailbox_id`/`provider_service_id`. A `failed` row re-checks state, domain and capacity in the same conditional `UPDATE` (like retry). By default creates or reuses the `mail_accounts` row for the address (`smtp_profile` = the given key; an existing row keeps its own), grants the acting staff member `mail_account_access`, and sets `mail_account_id`. **No password field exists, by design.** A second fulfill returns 409 `already_fulfilled` and writes nothing; two simultaneous ones have one winner. If the bridge/log batch fails after the claim, the mailbox is put back as it was. |
+| `declineMailboxRequest` | client `reserved` → `discarded` | Staff only, reason required. `failure_code = 'declined_by_staff'`. `discarded` frees the address immediately. |
+
+**Allowance rule change (`policy.ts`):** `COUNTED_MAILBOX_SQL` / `mailboxCountsAgainstAllowance` now count a `reserved` row with **no** lease (`reserved_until IS NULL`) as well as one with a live lease. That is what makes a client request hold its slot. The sweep never touches it (`NULL <= ?` is never true) and `runProvisioning` never claims it (`reserved_until > ?`). `services.ts`'s list query now uses the shared fragment instead of an inline copy. **Doc drift to fix in clienthub later:** the `email_mailboxes` comment in `clienthub/d1/schema.sql` still says "reserved while its lease is live". It's comment-only (no migration), but the drift-guard test compares that block verbatim, so it must be changed in both files together; it was deliberately left alone here because clienthub was out of scope.
+
+### 35.2 Staff routes and UI
+
+- `POST …/mailboxes/:mailboxId/fulfill` `{ providerMailboxId, providerServiceId?, smtpProfileKey?, createBridgeAccount?, bridgeDisplayName? }`. A body containing `password` is refused (400).
+- `POST …/mailboxes/:mailboxId/decline` `{ reason }`.
+- Both owner/admin via the existing `requireEmailAdmin`.
+- `EmailServiceDetailPage`: a "Requested by client" badge plus "Awaiting setup" status, "Fulfill manually" on any reserved/needs-review/failed row, "Decline" on client requests, and "Linked to webmail" under bridged addresses. `src/components/emailServices/FulfillMailboxModal.tsx` prefills the service's provider id and a default key `client-<service-id-prefix>-<local-part>`, and shows a concrete runbook (create in Z.com → set password there → give Claude host/port/username/password + the exact key for `MAIL_SMTP_PROFILES_JSON` → DNS for the domain).
+
+### 35.3 Provider interface
+
+`listMessages`, `getMessageDetails`, `getAttachment` (read-only), with `ProviderMessageSummary` / `ProviderMessageDetails`. `NotConfiguredProvider` stubs all three honestly. **Unverified assumption:** Z.com's docs show no example value for a message's content field. `ProviderMessageDetails.rawMime` assumes raw MIME; an adapter that gets something else sets it to null and fills `bodyText`/`bodyHtml`. Correct this against a real Z.com response before trusting the sync.
+
+### 35.4 Inbound poll sync (`mail-worker/src/zcomPollSync.ts`)
+
+- `mail-worker/src/index.ts` is now a custom entry: `email()` and `scheduled()` delegate to `@altasme/webmail-kit/worker`'s own default handler unchanged, and `scheduled()` also runs `runZcomPollSync`. The package itself was not modified.
+- The provider comes from `functions/_lib/emailServices/provider` (imported directly, as this worker imported `functions/_lib/mail/*` before the package existed). It's the placeholder today, so **the sync skips itself silently** until a real adapter exists.
+- Per tick: up to 5 active, bridged `zcom_poll_sync` mailboxes not attempted in the last 5 minutes (oldest attempt first, from the `message_sync` log, so a failing mailbox can't starve the rest). One `listMessages` (newest 50), then up to 10 unseen messages each.
+- Each message goes through the package's `processInbound()` (raw MIME as-is; otherwise a MIME message rebuilt with the package's `buildMimeMessage`, fetching attachments only when `hasAttachments`). Same D1/R2 rows as Email Routing mail; `UNIQUE(account_id, dedupe_key)` handles duplicates.
+- Stored messages get a `mail_events` row (`zcom_poll_synced`, provider message id in `event_data`), so a known id is skipped with no further provider call. No schema change.
+- One `email_provisioning_logs` row (`message_sync`) per mailbox per poll. `last_synced_at` moves only on a fully successful pass. Per-mailbox failures are caught and logged; the batch continues.
+- Limitation: more than 50 new messages for one mailbox between its passes → the older ones are missed (no "since" filter, no paging).
+
+### 35.5 How this was tested
+
+- `npm test`: **84/84 pass** (66 existing + 1 new policy assertion + 12 manual-fulfillment + 6 poll-sync), also with `EMAIL_TESTS_USE_CLIENTHUB_SCHEMA=1`. The fixture gained the webmail tables these paths write (copied verbatim, above the drift-guarded block).
+- Covered: ownership (incl. a negative control proving the INSERT's `client_id` clause is what refuses a service that changes hands mid-request), 10-way concurrent requests (one pending, capacity holds), the held request blocking an allowance drop, decline freeing the address, fulfill → bridge account + access grant, a credential scan over every touched table, double/concurrent fulfill, reuse of an existing `mail_accounts` row, recovering a failed primary (refused when the slot is taken; clears `provisioning_error`; enables activation). Poll sync: placeholder skip, storage through `processInbound`, known-id skip, dedupe duplicate, per-mailbox isolation, attachments fetched only when flagged, per-tick bounds and the poll interval.
+- `npx tsc -p functions/tsconfig.json --noEmit`, `npm run lint`, `npm run build`, `mail-worker` `npm run typecheck`, and `wrangler deploy --dry-run` (bundle only, nothing deployed) all pass.
+- **Not done:** no browser pass over the new modal and no `wrangler pages dev` run of the two new routes this round.
+
+### 35.6 Operator checklist (outside this codebase)
+
+1. For each mailbox: create it in Z.com, set its password there, then "Fulfill manually" in ClientKeeper.
+2. Add its SMTP login to the mail worker's `MAIL_SMTP_PROFILES_JSON` secret under the exact key shown (`{"<key>": {"host","port","security","username","password"}}`), and the same on the Pages project if staff send from it in `/mail`; redeploy.
+3. New domain: publish Z.com's MX/SPF/DKIM in Cloudflare DNS.
+4. Inbound sync does nothing until a real Z.com adapter exists (credentials + a token mechanism).

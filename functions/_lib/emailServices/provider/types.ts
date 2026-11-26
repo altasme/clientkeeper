@@ -104,6 +104,66 @@ export interface MailboxRef extends ProviderServiceRef {
   providerMailboxId: string | null;
 }
 
+// ---------------------------------------------------------------------------
+// Read-only message access, for the webmail bridge's inbound poll sync
+// (mail-worker/src/zcomPollSync.ts, CLAUDE.md §35). Z.com's real API has
+// List Messages / Show Message Details / Get Attachments endpoints; these
+// shapes are OUR normalized view of them, which an adapter fills in.
+// Z.com's List Messages has no "since" filter, so callers page by date and
+// rely on idempotent re-insertion rather than asking for new mail only.
+
+export interface ProviderMessageSummary {
+  // The provider's own opaque message id; never assumed to be a UUID or
+  // to equal the RFC 5322 Message-ID header.
+  providerMessageId: string;
+  subject: string;
+  from: string;
+  // As the provider reports it. Not parsed by the sync (format unverified).
+  date: string;
+  hasAttachments: boolean;
+}
+
+export interface ProviderMessageAttachment {
+  attachmentId: string;
+  filename: string;
+  contentType: string;
+  sizeBytes: number | null;
+}
+
+export interface ProviderMessageDetails extends ProviderMessageSummary {
+  to: string[];
+  cc: string[];
+  attachments: ProviderMessageAttachment[];
+  // =========================================================================
+  // UNVERIFIED ASSUMPTION. Z.com's documentation describes a content field
+  // on Show Message Details but shows NO concrete example value, so whether
+  // it is raw MIME text, a pre-parsed structure, or something else is not
+  // known. This interface assumes the common case, raw RFC 5322/MIME text,
+  // carried as `rawMime`, because that lets the sync hand it straight to
+  // @altasme/webmail-kit's existing inbound parser (the same code that
+  // processes Cloudflare Email Routing mail). An adapter that receives
+  // something else sets rawMime = null and fills bodyText/bodyHtml instead;
+  // the sync then rebuilds a MIME message from those plus getAttachment().
+  // Correct this against a real Z.com response before trusting the sync.
+  // =========================================================================
+  rawMime: string | null;
+  bodyText: string | null;
+  bodyHtml: string | null;
+}
+
+export interface MessageListRef extends ProviderServiceRef {
+  providerMailboxId: string;
+  sortKey?: "date" | "subject" | "from";
+  sortType?: "asc" | "desc";
+  limit?: number;
+  offset?: number;
+}
+
+export interface MessageRef extends ProviderServiceRef {
+  providerMailboxId: string;
+  providerMessageId: string;
+}
+
 export interface EmailHostingProvider {
   readonly name: ProviderName;
   status(): ProviderStatus;
@@ -116,4 +176,8 @@ export interface EmailHostingProvider {
   configureForwarding(ref: MailboxRef & { forwardTo: string[]; keepCopy: boolean }): Promise<ProviderResult<{ configured: true }>>;
   getServiceDetails(ref: ProviderServiceRef): Promise<ProviderResult<ProviderServiceDetails>>;
   getUsage(ref: ProviderServiceRef): Promise<ProviderResult<ProviderUsage>>;
+  // Read-only; never change anything at the provider.
+  listMessages(ref: MessageListRef): Promise<ProviderResult<ProviderMessageSummary[]>>;
+  getMessageDetails(ref: MessageRef): Promise<ProviderResult<ProviderMessageDetails>>;
+  getAttachment(ref: MessageRef & { attachmentId: string }): Promise<ProviderResult<{ filename: string; contentType: string; data: ArrayBuffer }>>;
 }
