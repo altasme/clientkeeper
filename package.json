@@ -11,7 +11,7 @@
     "test": "tsx --test tests/mail/*.test.ts tests/emailServices/*.test.ts tests/mailClient/*.test.ts"
   },
   "dependencies": {
-    "@altasme/webmail-kit": "github:altasme/webmail#1e1141849e79107e6ab3ec216b9a4107b7e65bf0",
+    "@altasme/webmail-kit": "github:altasme/webmail#af86870e4b7e795378b9cb4a5fca604583c4d783",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^7.18.2"
