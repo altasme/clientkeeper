@@ -13,12 +13,14 @@ import {
   adjustEmailEntitlement,
   assignEmailPlan,
   canManageEmail,
+  createMailboxRequestLink,
   declineEmailMailboxRequest,
   deleteEmailMailbox,
   discardEmailMailbox,
   fetchEmailPlans,
   fetchEmailService,
   fetchEmailServiceLogs,
+  fetchMailboxRequestLinks,
   formatDate,
   formatDateTime,
   formatPhp,
@@ -28,6 +30,7 @@ import {
   removeEmailDomain,
   resolveEmailMailbox,
   retryEmailMailbox,
+  revokeMailboxRequestLink,
   syncEmailService,
   transitionEmailService,
   updateEmailService,
@@ -37,6 +40,7 @@ import {
   type EmailPlan,
   type EmailServiceDetail,
   type LifecycleAction,
+  type MailboxRequestLink,
   type OperationEntry,
 } from "../lib/emailServicesApi";
 
@@ -578,6 +582,13 @@ export default function EmailServiceDetailPage() {
         </div>
       </Card>
 
+      <RequestLinksCard
+        detail={s}
+        canManage={canManage && !cancelled}
+        blockedReason={!s.plan ? "Assign a plan first" : !activeDomains.length ? "Assign a domain first" : !["pending_setup", "active", "provisioning_error"].includes(s.effectiveStatus) ? `Not available while the service is ${SERVICE_STATUS_LABEL[s.effectiveStatus].toLowerCase()}` : null}
+        onNotice={setNotice}
+      />
+
       <div className="grid gap-5 lg:grid-cols-2">
         <Card
           title="Domains"
@@ -900,6 +911,143 @@ export default function EmailServiceDetailPage() {
         }}
       />
     </div>
+  );
+}
+
+const LINK_STATUS_STYLE: Record<MailboxRequestLink["status"], string> = {
+  open: "bg-sky-100 text-sky-700",
+  used: "bg-green-100 text-green-700",
+  revoked: "bg-ink/10 text-ink/50",
+};
+
+// Mailbox request links (CLAUDE.md §36). A link lets the client pick a
+// name and domain on www.altasme.com without logging in; it is used once,
+// and the request it makes shows up in Mailboxes above as "Requested by
+// client", to fulfill or decline as usual. Reloads with the page, so a
+// link the client just used flips to "Used" on the next refresh.
+function RequestLinksCard({
+  detail,
+  canManage,
+  blockedReason,
+  onNotice,
+}: {
+  detail: EmailServiceDetail;
+  canManage: boolean;
+  blockedReason: string | null;
+  onNotice: (n: { kind: "ok" | "warn" | "error"; text: string }) => void;
+}) {
+  const [links, setLinks] = useState<MailboxRequestLink[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [showClosed, setShowClosed] = useState(false);
+  const serviceId = detail.id;
+
+  const reload = useCallback(() => {
+    fetchMailboxRequestLinks(serviceId)
+      .then(setLinks)
+      .catch(() => setLinks([]));
+  }, [serviceId]);
+  useEffect(reload, [reload, detail]);
+
+  const copy = async (link: MailboxRequestLink) => {
+    try {
+      await navigator.clipboard.writeText(link.url);
+      setCopiedId(link.id);
+      setTimeout(() => setCopiedId((c) => (c === link.id ? null : c)), 2000);
+    } catch {
+      onNotice({ kind: "warn", text: `Couldn't copy automatically. The link is: ${link.url}` });
+    }
+  };
+
+  const visible = (links ?? []).filter((l) => showClosed || l.status === "open");
+  const closedCount = (links ?? []).filter((l) => l.status !== "open").length;
+
+  return (
+    <Card
+      title="Mailbox request links"
+      actions={
+        <div className="flex flex-wrap items-center gap-2">
+          {closedCount > 0 && (
+            <button type="button" className="text-xs font-semibold text-ink/50 hover:text-ink" onClick={() => setShowClosed(!showClosed)}>
+              {showClosed ? "Hide" : "Show"} used/revoked ({closedCount})
+            </button>
+          )}
+          {canManage && (
+            <button
+              type="button"
+              className={primaryBtn}
+              disabled={busy || !!blockedReason}
+              title={blockedReason ?? undefined}
+              onClick={async () => {
+                setBusy(true);
+                try {
+                  const link = await createMailboxRequestLink(serviceId);
+                  onNotice({ kind: "ok", text: "Request link created. Copy it and send it to the client." });
+                  setShowClosed(false);
+                  setLinks((prev) => [link, ...(prev ?? [])]);
+                } catch (err) {
+                  onNotice({ kind: "error", text: (err as Error).message });
+                } finally {
+                  setBusy(false);
+                }
+              }}
+            >
+              {busy ? "Creating…" : "Generate mailbox request link"}
+            </button>
+          )}
+        </div>
+      }
+    >
+      <p className="text-xs text-ink/50">
+        A one-time link the client opens on www.altasme.com to ask for a mailbox (no login). It shows them the service's domains and remaining slots; their request appears above as
+        &ldquo;Requested by client&rdquo;. Each link works once.
+      </p>
+      {links === null ? (
+        <p className="mt-3 text-sm text-ink/40">Loading…</p>
+      ) : (
+        <ul className="mt-3 divide-y divide-ink/5 text-sm">
+          {visible.map((l) => (
+            <li key={l.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
+              <div className="min-w-0 flex-1">
+                <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${LINK_STATUS_STYLE[l.status]}`}>{l.status === "open" ? "Open" : l.status === "used" ? "Used" : "Revoked"}</span>
+                <span className="ml-2 break-all font-mono text-xs text-ink/70">{l.url}</span>
+                <p className="mt-0.5 text-xs text-ink/50">
+                  Created {formatDateTime(l.createdAt)}
+                  {l.createdBy ? ` · ${l.createdBy}` : ""}
+                  {l.status === "used" && ` · used ${formatDateTime(l.usedAt)}${l.usedMailboxAddress ? ` for ${l.usedMailboxAddress}` : ""}`}
+                </p>
+              </div>
+              {l.status === "open" && (
+                <div className="flex gap-1">
+                  <button type="button" className={secondaryBtn} onClick={() => copy(l)}>
+                    {copiedId === l.id ? "Copied!" : "Copy link"}
+                  </button>
+                  {canManage && (
+                    <button
+                      type="button"
+                      className={dangerBtn}
+                      onClick={async () => {
+                        try {
+                          await revokeMailboxRequestLink(serviceId, l.id);
+                          onNotice({ kind: "ok", text: "Request link revoked." });
+                        } catch (err) {
+                          onNotice({ kind: "error", text: (err as Error).message });
+                        } finally {
+                          reload();
+                        }
+                      }}
+                    >
+                      Revoke
+                    </button>
+                  )}
+                </div>
+              )}
+            </li>
+          ))}
+          {visible.length === 0 && <li className="py-2 text-ink/40">{links.length ? "No open links." : "No request links yet."}</li>}
+        </ul>
+      )}
+    </Card>
   );
 }
 

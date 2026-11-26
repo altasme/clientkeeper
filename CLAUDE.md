@@ -1101,3 +1101,37 @@ So there is still **no real Z.com adapter** (`provider/zcom.ts` does not exist).
 2. Add its SMTP login to the mail worker's `MAIL_SMTP_PROFILES_JSON` secret under the exact key shown (`{"<key>": {"host","port","security","username","password"}}`), and the same on the Pages project if staff send from it in `/mail`; redeploy.
 3. New domain: publish Z.com's MX/SPF/DKIM in Cloudflare DNS.
 4. Inbound sync does nothing until a real Z.com adapter exists (credentials + a token mechanism).
+
+## 36. Email Services: mailbox request links (the caller `requestMailboxByClient` was missing) [2026-11-26]
+
+§35 left `requestMailboxByClient` with no caller. The operator's decision: no clienthub page. It works like the proposal/questionnaire links. Staff generate a one-time, token-gated link for one email service, send it by hand (chat, email), and the client opens `https://www.altasme.com/mailbox-request/<slug>?t=<token>` on the marketing site, picks a name, and submits. No login, no account.
+
+### 36.1 Who does what
+
+| Piece | Where |
+|---|---|
+| `mail_request_links` table | clienthub `d1/schema.sql` (end of the Email Services block; copied verbatim into `tests/emailServices/schema.fixture.sql`, drift-guarded as before) |
+| Create / list / revoke | here: `functions/_lib/emailServices/requestLinks.ts` + `functions/api/app/email-services/[serviceId]/request-links/` |
+| The reservation | altaventureswebsite: `functions/api/public/mailbox-request/` (its CLAUDE.md §74). A separate deployable, so it carries its own copy of `requestMailboxByClient`'s `INSERT … SELECT`, with a cross-reference comment pointing here |
+
+**If you change `requestMailboxByClient`'s reservation statement, `COUNTED_MAILBOX_SQL`, `PROVISIONABLE_SERVICE_STATUSES` or `normalizeLocalPart`, change the marketing site's copies too** (`functions/_lib/publicDocs.ts` and the submit route there). They decide who gets a paid slot.
+
+### 36.2 Staff side
+
+- `GET …/request-links` (any staff role): every link for the service, newest first, with the full URL, creator, and, for a used link, the address of the request it created.
+- `POST …/request-links` `{}` → 201 `{ link }`. Owner/admin (`requireEmailAdmin`). Refused (409) when the client couldn't use it: no plan, no active domain, or the service isn't provisionable (`canProvisionMailbox`, so an `active` service past `expires_at` counts as expired). The public route re-checks all of it atomically anyway.
+- `POST …/request-links/:linkId/revoke` → `open` → `revoked`, one conditional `UPDATE`. 409 `link_used` (decline the request instead) or `link_revoked`. Owner/admin.
+- Slug and token come from `_lib/publicDocs.ts`'s `generateUniqueSlugAndToken` (now also accepts `mail_request_links`), so the token is the same 8-character scheme proposals use. Slug base is the client's business name.
+- Both mutations write `email_audit_logs` (`mailbox_request_link_created` / `_revoked`).
+- **A link carries no domain.** The client picks among the service's active domains on the public page, so a link sent before staff add a second domain still offers both.
+- `EmailServiceDetailPage`: a "Mailbox request links" card below Mailboxes with "Generate mailbox request link" (disabled with the reason as a tooltip when there's no plan/domain or the state is wrong), Copy link / Revoke on open links, and used/revoked links behind a toggle. The request a link creates shows up in Mailboxes exactly like any client request ("Requested by client", Fulfill manually / Decline).
+
+### 36.3 What the public side does (summary; details in altaventureswebsite §74)
+
+The resulting row is exactly what `requestMailboxByClient` creates: `reserved`, `reserved_until = NULL`, `created_by_type = 'client'`, `created_by` = the service's `client_id`, never primary, no provider call. Link `open` → `used` (with `used_mailbox_id`) in the same D1 batch, conditional on the row existing. The link's `status = 'open'` is checked inside the INSERT, which is the ownership boundary in place of `s.client_id = ?`. The audit row is `mailbox_requested_by_client` with `actor_type = 'client'`, plus `{ via: "request_link", linkId }` in `after_json`.
+
+### 36.4 How this was tested
+
+- `tests/emailServices/requestLinks.test.ts` (6 tests): create (unique slugs `acme-ph`, `acme-ph-2`; distinct tokens; the `https://www.altasme.com/mailbox-request/…` URL; audit rows), refusals (no plan, no domain, suspended, expired-by-date, unknown service, non-staff actor), revoke (once; `link_used`; wrong service → 404), list showing a used link's address, and the routes' owner/admin gate (403 for `sales` on create/revoke, 200 on list).
+- `npm test`: **90/90** with `EMAIL_TESTS_USE_CLIENTHUB_SCHEMA=1` against the updated clienthub schema (drift guard included); 89 pass + 1 skip (the drift guard) on the fixture alone. `npx tsc -p functions/tsconfig.json --noEmit`, `npm run lint`, `npm run build` pass.
+- End to end with the marketing site: two `wrangler pages dev` processes on one shared local D1 (temporary `wrangler.toml`/`.dev.vars`, deleted after), a hand-minted `ck_session` cookie. Create/list/revoke via curl (401 without a cookie, 403 for `sales`), the public flow (see altaventureswebsite §74.4), then staff fulfill/decline of the requests the links created. A Playwright pass over the new card: generate, copy (clipboard holds the exact URL), revoke, and used links showing their addresses; no page errors.
