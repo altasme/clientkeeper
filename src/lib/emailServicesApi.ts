@@ -214,6 +214,23 @@ export function defaultSmtpProfileKey(serviceId: string, address: string): strin
   return `client-${serviceId.replace(/[^a-z0-9]/gi, "").slice(0, 8)}-${local}`.toLowerCase().replace(/[^a-z0-9._-]/g, "-").slice(0, 100);
 }
 
+// Mailbox request links (CLAUDE.md §36): one-time links staff send to a
+// client so they can request a mailbox on www.altasme.com without logging in.
+export interface MailboxRequestLink {
+  id: string;
+  status: "open" | "used" | "revoked";
+  url: string;
+  createdBy: string | null;
+  createdAt: string;
+  usedAt: string | null;
+  usedMailboxId: string | null;
+  usedMailboxAddress: string | null;
+}
+export const fetchMailboxRequestLinks = (id: string) => apiFetch<{ links: MailboxRequestLink[] }>(`${svc(id)}/request-links`).then((r) => r.links);
+export const createMailboxRequestLink = (id: string) => apiFetch<{ link: MailboxRequestLink }>(`${svc(id)}/request-links`, post({})).then((r) => r.link);
+export const revokeMailboxRequestLink = (id: string, linkId: string) =>
+  apiFetch<{ link: MailboxRequestLink }>(`${svc(id)}/request-links/${encodeURIComponent(linkId)}/revoke`, post({})).then((r) => r.link);
+
 export const transitionEmailService = (id: string, action: LifecycleAction, reason?: string, expiresAt?: string) =>
   apiFetch<unknown>(`${svc(id)}/lifecycle`, post({ action, reason, expiresAt }));
 export const syncEmailService = (id: string) =>

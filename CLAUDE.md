@@ -11,7 +11,7 @@
 
 - **ClientKeeper is the source of truth.** A client's stage and offer visibility are derived from data only staff can write here. `clienthub` reads this data but has no path to mutate stage/offer/plan.
 - **Zero public endpoints.** Every route in this app requires an authenticated, role-checked WorkOS session. There is no anonymous entry point — payment webhooks, invitation callbacks, and all client-facing traffic live in `clienthub`, not here. This is deliberate isolation: a bug in `clienthub`'s client-facing code has no code path into anything here.
-  - **Amended [2026-11-26], §36:** one deliberate exception. `/api/mail-client/*` lets the owner of a client-hosted mailbox sign in with that mailbox's own password (`POST /api/mail-client/login` is reachable without a session) and use only that mailbox. It is a separate session mechanism that grants nothing under `/api/app/*`, and every `/api/app/*` route still requires a staff session. Read §36 before touching either side.
+  - **Amended [2026-11-26], §37:** one deliberate exception. `/api/mail-client/*` lets the owner of a client-hosted mailbox sign in with that mailbox's own password (`POST /api/mail-client/login` is reachable without a session) and use only that mailbox. It is a separate session mechanism that grants nothing under `/api/app/*`, and every `/api/app/*` route still requires a staff session. Read §37 before touching either side.
 - Not a monorepo with `clienthub` — separate repo, separate deployment, connected only through the shared D1 database (see `clienthub/CLAUDE.md` §3 for the binding setup — both projects must bind the *same* database id under variable name `DB`).
 
 ---
@@ -1103,11 +1103,45 @@ So there is still **no real Z.com adapter** (`provider/zcom.ts` does not exist).
 3. New domain: publish Z.com's MX/SPF/DKIM in Cloudflare DNS.
 4. Inbound sync does nothing until a real Z.com adapter exists (credentials + a token mechanism).
 
-## 36. Client mailbox login: a client reads and sends their own mail at `/mail/client` [2026-11-26]
+## 36. Email Services: mailbox request links (the caller `requestMailboxByClient` was missing) [2026-11-26]
+
+§35 left `requestMailboxByClient` with no caller. The operator's decision: no clienthub page. It works like the proposal/questionnaire links. Staff generate a one-time, token-gated link for one email service, send it by hand (chat, email), and the client opens `https://www.altasme.com/mailbox-request/<slug>?t=<token>` on the marketing site, picks a name, and submits. No login, no account.
+
+### 36.1 Who does what
+
+| Piece | Where |
+|---|---|
+| `mail_request_links` table | clienthub `d1/schema.sql` (end of the Email Services block; copied verbatim into `tests/emailServices/schema.fixture.sql`, drift-guarded as before) |
+| Create / list / revoke | here: `functions/_lib/emailServices/requestLinks.ts` + `functions/api/app/email-services/[serviceId]/request-links/` |
+| The reservation | altaventureswebsite: `functions/api/public/mailbox-request/` (its CLAUDE.md §74). A separate deployable, so it carries its own copy of `requestMailboxByClient`'s `INSERT … SELECT`, with a cross-reference comment pointing here |
+
+**If you change `requestMailboxByClient`'s reservation statement, `COUNTED_MAILBOX_SQL`, `PROVISIONABLE_SERVICE_STATUSES` or `normalizeLocalPart`, change the marketing site's copies too** (`functions/_lib/publicDocs.ts` and the submit route there). They decide who gets a paid slot.
+
+### 36.2 Staff side
+
+- `GET …/request-links` (any staff role): every link for the service, newest first, with the full URL, creator, and, for a used link, the address of the request it created.
+- `POST …/request-links` `{}` → 201 `{ link }`. Owner/admin (`requireEmailAdmin`). Refused (409) when the client couldn't use it: no plan, no active domain, or the service isn't provisionable (`canProvisionMailbox`, so an `active` service past `expires_at` counts as expired). The public route re-checks all of it atomically anyway.
+- `POST …/request-links/:linkId/revoke` → `open` → `revoked`, one conditional `UPDATE`. 409 `link_used` (decline the request instead) or `link_revoked`. Owner/admin.
+- Slug and token come from `_lib/publicDocs.ts`'s `generateUniqueSlugAndToken` (now also accepts `mail_request_links`), so the token is the same 8-character scheme proposals use. Slug base is the client's business name.
+- Both mutations write `email_audit_logs` (`mailbox_request_link_created` / `_revoked`).
+- **A link carries no domain.** The client picks among the service's active domains on the public page, so a link sent before staff add a second domain still offers both.
+- `EmailServiceDetailPage`: a "Mailbox request links" card below Mailboxes with "Generate mailbox request link" (disabled with the reason as a tooltip when there's no plan/domain or the state is wrong), Copy link / Revoke on open links, and used/revoked links behind a toggle. The request a link creates shows up in Mailboxes exactly like any client request ("Requested by client", Fulfill manually / Decline).
+
+### 36.3 What the public side does (summary; details in altaventureswebsite §74)
+
+The resulting row is exactly what `requestMailboxByClient` creates: `reserved`, `reserved_until = NULL`, `created_by_type = 'client'`, `created_by` = the service's `client_id`, never primary, no provider call. Link `open` → `used` (with `used_mailbox_id`) in the same D1 batch, conditional on the row existing. The link's `status = 'open'` is checked inside the INSERT, which is the ownership boundary in place of `s.client_id = ?`. The audit row is `mailbox_requested_by_client` with `actor_type = 'client'`, plus `{ via: "request_link", linkId }` in `after_json`.
+
+### 36.4 How this was tested
+
+- `tests/emailServices/requestLinks.test.ts` (6 tests): create (unique slugs `acme-ph`, `acme-ph-2`; distinct tokens; the `https://www.altasme.com/mailbox-request/…` URL; audit rows), refusals (no plan, no domain, suspended, expired-by-date, unknown service, non-staff actor), revoke (once; `link_used`; wrong service → 404), list showing a used link's address, and the routes' owner/admin gate (403 for `sales` on create/revoke, 200 on list).
+- `npm test`: **90/90** with `EMAIL_TESTS_USE_CLIENTHUB_SCHEMA=1` against the updated clienthub schema (drift guard included); 89 pass + 1 skip (the drift guard) on the fixture alone. `npx tsc -p functions/tsconfig.json --noEmit`, `npm run lint`, `npm run build` pass.
+- End to end with the marketing site: two `wrangler pages dev` processes on one shared local D1 (temporary `wrangler.toml`/`.dev.vars`, deleted after), a hand-minted `ck_session` cookie. Create/list/revoke via curl (401 without a cookie, 403 for `sales`), the public flow (see altaventureswebsite §74.4), then staff fulfill/decline of the requests the links created. A Playwright pass over the new card: generate, copy (clipboard holds the exact URL), revoke, and used links showing their addresses; no page errors.
+
+## 37. Client mailbox login: a client reads and sends their own mail at `/mail/client` [2026-11-26]
 
 A client whose mailbox Altaventures hosts (§34/§35) signs in with that mailbox's address and its **real password**, and gets a Gmail-style view of **that one mailbox only**. This is the first non-staff principal in this app (§0 amended). Keeping it isolated from the staff session matters more than anything else here. That isolation is enforced in code, not by convention, and is tested directly.
 
-### 36.1 How a client session is isolated from a staff session
+### 37.1 How a client session is isolated from a staff session
 
 `functions/_lib/mailClient/session.ts` has three independent layers. Any one of them is enough on its own:
 1. **Different cookie name.** The staff cookie is `ck_session`. Only `verifySessionCookie` (`functions/_lib/session.ts`) reads it, and only `functions/api/app/_middleware.ts` calls that. The client cookie is `ck_mail_client_session`. Only `verifyMailClientSessionCookie` reads it, and only `mailClientHandler` (`functions/_lib/mailClient/handler.ts`) and the login route call that. A header that carries the client cookie twice is refused.
@@ -1121,7 +1155,7 @@ There is more on top of those three:
 
 The client guard does not reuse `@altasme/webmail-kit`'s `mailHandler()`. That function reads `ctx.data.staffUser` and looks up access in `mail_account_access` by `users.id`, and neither applies to a client. The client guard resolves its own principal instead. It hands route code the same `{ ctx, db, user, access }` shape, with an access map that holds exactly one mailbox.
 
-### 36.2 Who can log in, and how each request is scoped
+### 37.2 Who can log in, and how each request is scoped
 
 **Which mailboxes are eligible** (`functions/_lib/mailClient/account.ts`). A mailbox is eligible only when all of these hold:
 - its `mail_accounts` row has `is_active = 1` and a non-empty `smtp_profile`;
@@ -1158,7 +1192,7 @@ Nothing else exists for clients: no identities, access grants, labels, settings,
 
 **Audit.** Client actions go into `mail_events` with `actor_id = 'mailbox:<accountId>'`. Client sends are stored with `created_by = NULL`, because that column references `users`.
 
-### 36.3 Login (`functions/_lib/mailClient/login.ts`)
+### 37.3 Login (`functions/_lib/mailClient/login.ts`)
 
 **How the password is checked.** The login route runs a real SMTP AUTH against the mailbox's own server, using the package's new `verifySmtpLogin`. It sends AUTH, then QUIT, and nothing else. The server settings come from `resolveSmtpConfig` with the account's `smtp_profile`, the same lookup that sending uses.
 
@@ -1178,7 +1212,7 @@ The limits are, per 15 minutes:
 
 SMTP outages and timeouts are logged as `client_mail_login_error` and don't count toward either limit. No raw address, IP or password is stored.
 
-### 36.4 What clients can't do yet, and why
+### 37.4 What clients can't do yet, and why
 
 **Drafts, autosave and attachment upload are blocked by the schema.** `mail_drafts.created_by` is `NOT NULL REFERENCES users(id)`, and D1 enforces foreign keys. A client has no `users` row, and adding one would make them look like staff. Uploads hang off drafts, so they're blocked too. A test proves the foreign-key refusal. Enabling any of this needs a clienthub schema change first (a nullable `created_by` plus an owner-account column, or a separate table), then package and route work.
 
@@ -1186,7 +1220,7 @@ Two smaller gaps follow from the same cause or from scope:
 - A forward doesn't carry the original message's attachments, because that hand-over goes through a draft.
 - There is no settings or signature management. This is a reasonable fast-follow. Prefill already uses the mailbox's existing signature.
 
-### 36.5 Package changes (`@altasme/webmail-kit`, pinned to the PR branch commit)
+### 37.5 Package changes (`@altasme/webmail-kit`, pinned to the PR branch commit)
 
 - **`smtp.ts`** now has a shared `SmtpSession` handshake. Both `smtpSend` and the new `smtpVerifyLogin` use it. `smtpSend`'s behavior is unchanged, and all existing SMTP tests pass.
 - **`smtpTransport.ts`** gained `verifySmtpLogin`.
@@ -1197,7 +1231,7 @@ Two smaller gaps follow from the same cause or from scope:
 
 **After the webmail PR merges, re-pin `package.json` to the merge commit.** A squash merge changes the SHA.
 
-### 36.6 Frontend
+### 37.6 Frontend
 
 `/mail/client-login` and `/mail/client` are lazy-loaded pages (`src/pages/ClientMail*.tsx`). `App.tsx` mounts them **outside `MeProvider`**, because the staff bootstrap would send a client to the WorkOS login. They call only `src/lib/clientMailApi.ts`, which calls only `/api/mail-client/*`.
 
@@ -1205,7 +1239,7 @@ Two smaller gaps follow from the same cause or from scope:
 
 **Not reused:** `MailThreadView`, `MailComposer`, `MailAttachmentPreview` and `MailMessageList`. They call the staff `mailApi` directly or offer staff-only actions.
 
-### 36.7 How this was tested
+### 37.7 How this was tested
 
 **Unit and route tests.** `npm test` passes **133/133**: the 84 existing tests plus 49 new ones in `tests/mailClient/`. The new ones also pass with `EMAIL_TESTS_USE_CLIENTHUB_SCHEMA=1`. They cover:
 - each guard against the other's cookies: renamed values, cross-signed payloads, and both cookies present at once;
@@ -1235,14 +1269,14 @@ The SMTP log showed only AUTH and QUIT for logins, and no SMTP contact at all fo
 
 **Build.** `npx tsc -p functions/tsconfig.json --noEmit`, `npm run build` and `npm run lint` are clean.
 
-### 36.8 Operator checklist
+### 37.8 Operator checklist
 
 1. Merge the webmail PR, re-pin `@altasme/webmail-kit` here to the merge commit, then merge this PR.
 2. **Make `MAIL_SMTP_PROFILES_JSON` available to the Pages project** (Settings → Variables and Secrets), not only to the mail worker. Login runs in a Pages Function. Without the profiles there, every client login fails with the generic error. §35.6 described adding it to Pages as optional; for client login it is required.
 3. Make sure each client profile's `username` is the mailbox's own address.
 4. Attach `mail.altasme.com` (§34.8). Clients then sign in at `https://mail.altasme.com/mail/client-login`.
 
-### 36.9 Residual risks and open questions
+### 37.9 Residual risks and open questions
 
 - **Provider brute-force protection.** Each failed login is a failed SMTP AUTH from a Cloudflare egress IP. If Z.com's cPanel blocks IPs after repeated failures (cPHulk-style), a burst could block those IPs and break outbound mail for everyone. The per-address and per-IP limits reduce this risk but don't remove it.
 - **Lockout as denial of service.** Anyone can lock a mailbox's web login for 15 minutes with 5 wrong passwords. The mailbox itself and staff access are unaffected.

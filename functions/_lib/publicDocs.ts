@@ -1,7 +1,7 @@
-// Shared slug + access-token helpers for proposals, questionnaires, and
-// service agreements (CLAUDEproposalquestionnaire.md; the Service
-// Agreement Generator is a direct clone of this same mechanism, CLAUDE.md
-// §29). Mirrors bills' own short-token pattern
+// Shared slug + access-token helpers for proposals, questionnaires,
+// service agreements and mailbox request links (CLAUDEproposalquestionnaire.md;
+// the Service Agreement Generator is a direct clone of this same
+// mechanism, CLAUDE.md §29, and so are mailbox request links, §36). Mirrors bills' own short-token pattern
 // (functions/api/app/bills/index.ts) exactly -- same alphabet, same
 // length, same bias-free byte-modulo mapping, same "unguessable token
 // behind a readable path" security model, just carried as a query param
@@ -29,7 +29,7 @@ export function slugify(input: string): string {
 
 /**
  * Generates a unique slug + unique access token for a new proposal,
- * questionnaire, or service agreement. `baseText` is usually the
+ * questionnaire, service agreement, or mailbox request link. `baseText` is usually the
  * client's business name. Collisions (same base slug already taken, by
  * this client or another) get a numeric suffix (-2, -3, ...) rather
  * than failing -- a client with two proposals, or two differently-named
@@ -38,7 +38,7 @@ export function slugify(input: string): string {
  */
 export async function generateUniqueSlugAndToken(
   db: D1Database,
-  table: "proposals" | "questionnaires" | "service_agreements",
+  table: "proposals" | "questionnaires" | "service_agreements" | "mail_request_links",
   baseText: string
 ): Promise<{ slug: string; accessToken: string }> {
   const base = slugify(baseText);
