@@ -32,6 +32,11 @@ import MailPage from "./pages/MailPage";
 const EmailServicesPage = lazy(() => import("./pages/EmailServicesPage"));
 const EmailServiceDetailPage = lazy(() => import("./pages/EmailServiceDetailPage"));
 const EmailPlansPage = lazy(() => import("./pages/EmailPlansPage"));
+// [2026-11-26] A client's own mailbox (CLAUDE.md §36). Code-split, and
+// mounted OUTSIDE MeProvider below: a client has no staff account, and
+// MeProvider's bootstrap would redirect them to the staff WorkOS login.
+const ClientMailLoginPage = lazy(() => import("./pages/ClientMailLoginPage"));
+const ClientMailPage = lazy(() => import("./pages/ClientMailPage"));
 
 function Lazy({ children }: { children: ReactNode }) {
   return <Suspense fallback={<p className="text-sm text-ink/40">Loading…</p>}>{children}</Suspense>;
@@ -43,6 +48,17 @@ function LegacyMyCafeClientRedirect() {
 }
 
 function App() {
+  return (
+    <Routes>
+      {/* Client mailbox pages: no staff session involved. They call only /api/mail-client/*. */}
+      <Route path="/mail/client-login" element={<Lazy><ClientMailLoginPage /></Lazy>} />
+      <Route path="/mail/client" element={<Lazy><ClientMailPage /></Lazy>} />
+      <Route path="*" element={<StaffApp />} />
+    </Routes>
+  );
+}
+
+function StaffApp() {
   return (
     <MeProvider>
       <Routes>
