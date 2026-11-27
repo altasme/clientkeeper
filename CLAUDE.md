@@ -1285,3 +1285,187 @@ The SMTP log showed only AUTH and QUIT for logins, and no SMTP contact at all fo
 - **Shared IP bucket.** Per-IP counting uses `CF-Connecting-IP`. Requests without that header all share one "unknown" bucket.
 - **Staff can read client mailboxes.** Staff who were granted `mail_account_access` to a client mailbox at fulfillment (§35) can read it. This round doesn't change that, but clients may not expect it.
 - **Not run against the real Z.com SMTP server.**
+
+## 38. Webmail Connect: single sign-on from a client's own admin panel into webmail [2026-11-27]
+
+Forward-looking: **no client admin panel uses this yet.** It is the server side of "Product B" in the webmail ecosystem spec: a reusable bridge that lets a future Altaventures-built client admin panel open its logged-in users' assigned mailboxes inside `mail.altasme.com`, with no mailbox password anywhere. The client-side package is a separate repo, **`altasme/webmail-connect`** (`@altasme/webmail-connect`, deliberately not named "webmail-kit", which is taken by the engine package, §33). That repo also holds a reference demo panel, which is how this was proven end to end.
+
+The identity is always the **mailbox** (`mail_accounts`). A panel user is an opaque `external_user_id` assigned by the integration, unique only within that integration, and never a webmail account of its own. Many panel users can share a mailbox; one panel user can have many mailboxes.
+
+### 38.1 Flow
+
+1. A panel's backend calls `POST /api/mail-connect/admin/launch` with its bearer secret and the logged-in user's id. It gets back a single-use URL that is valid for about 60 s.
+2. The browser is redirected to `GET /api/mail-connect/exchange?code=...`. That route claims the code and sets `ck_mail_connect_session`, then redirects to `/mail/connect`.
+3. `/mail/connect` (`src/pages/MailConnectPage.tsx`) loads the person's **live** grants from `/api/mail-connect/me` and opens the right mailbox:
+   - **zero grants:** "No email account has been assigned to your profile. Please contact your administrator."
+   - **grants exist but every mailbox is unavailable:** "temporarily unavailable"
+   - **one mailbox:** it opens directly
+   - **several mailboxes:** the default opens, with a switcher
+4. "Back to <panel>" is a link the person chooses to follow. They are never redirected automatically.
+
+Separately, the client's own Super Admin assigns mailboxes to their users through `POST/DELETE/GET /api/mail-connect/admin/grants`, from their own panel, using the package. Altaventures staff never manage those per-user grants.
+
+### 38.2 The third session type, and how it's isolated
+
+`functions/_lib/mailConnect/session.ts` mirrors `mailClient/session.ts`. It is isolated from **both** other session types by three independent layers:
+
+| | Staff | Mailbox owner (§37) | Webmail Connect |
+|---|---|---|---|
+| Cookie | `ck_session` | `ck_mail_client_session` | `ck_mail_connect_session` |
+| Signed message | `HMAC(secret, p)` | `HMAC(secret, "client_mail_session.v1." + p)` | `HMAC(secret, "mail_connect_session.v1." + p)` |
+| Required shape | `workosUserId` | `kind`, `mailAccountId`, `emailAddress` | `kind: "mail_connect_session"`, `integrationId`, `externalUserId`, `launchId`; refuses `workosUserId`/`mailAccountId`/`emailAddress` |
+| Path | `/` | `/api/mail-client` | `/api/mail-connect` |
+
+The connect cookie is also `SameSite=Strict`, `HttpOnly` and `Secure`, and lasts 8 h. That is shorter than the other two, because getting a fresh one is a single click in the panel. The routes live in `functions/api/mail-connect/`, outside both other route trees. **Neither of the other two guards was modified.** Tests prove each of the three guards rejects the other two cookies in every form: native, renamed, cross-signed, and all three present at once.
+
+**The payload holds identity only.** It has no mailbox list and no permissions. `mailConnectHandler` (`handler.ts`) re-reads two things on **every** request:
+- that the integration is still `active`;
+- the caller's grants, fresh from `mail_external_mailbox_access` (`account.ts`, `loadLiveGrants`).
+
+So revoking a grant, downgrading a permission, disabling the integration, suspending the service or detaching a mailbox all take effect on the very next request, with the same cookie and no refresh. `launchId` is only used to look up that launch's return URL, and that lookup is itself scoped to the same integration and user.
+
+### 38.3 Authorization: the tenant boundary and per-permission checks
+
+**Grantable set (the tenant boundary, `account.ts` `GRANTABLE_CONDITION`).** An integration can grant a mailbox only if it is an active `mail_accounts` row that is either:
+- **(a)** one of its own client's hosted mailboxes (`email_mailboxes` → `email_services`, both active, with `s.client_id = integration.client_id`); or
+- **(b)** explicitly attached to that integration by Altaventures staff in `mail_client_integration_mailboxes`.
+
+Both the grant API and every data request use this one SQL fragment, so the two can never disagree. Another client's mailbox returns `404 "Mailbox not found."`, exactly like an address that doesn't exist, so an integration can't probe for other clients' mailboxes.
+
+**Why (b) exists (a real conflict, resolved here).** The spec asked for both a client-ownership boundary and a demo into `sales@altasme.com`. `sales@` is a staff mailbox with no `email_mailboxes` row. It must not get one, because that would make it eligible for the shared-password login, which §37 deliberately keeps it out of. So staff-attached mailboxes are a separate, staff-only allowlist. It doesn't touch Email Services or client-login eligibility, and a test proves that. `attachMailbox` also **refuses a mailbox hosted for a different client (409)**, so not even a staff mistake can hand one client's panel access into another client's mail. This hardening was added after the live E2E showed the gap.
+
+Unlike the password login, (b) can safely include a *shared* mailbox. There is no password here: each person is admitted individually and can be revoked individually.
+
+**Per-request checks (`requireGrant`).** Every route that works on one mailbox takes an explicit `mailboxId` (in the query for reads, in the body for writes):
+- a mailbox that isn't in the live grant list returns **404**;
+- a mailbox that is listed but lacks the needed permission returns **403**.
+
+| Permission | Required for |
+|---|---|
+| `can_read` | everything. A grant with `can_read = 0` is no grant. |
+| `can_send` (AND `mail_accounts.outbound_enabled`) | `compose`, `send`. Checked before anything is queued. |
+| `can_delete` | `move` with `to: "trash"` |
+| `can_manage_settings` | `POST signatures` |
+
+Package calls only ever receive a one-entry access map. The UI hides Compose and Delete as a convenience, but the server is the actual control.
+
+**Attachments** are the one route without a `mailboxId`. Their ids are global and their URLs are embedded in message HTML (`cid:`), so they are authorized against the union of the caller's readable grants. Draft attachments are refused.
+
+**Sending** goes through `queueOutboundMessageAsMailboxOwner`: `created_by` is NULL, and idempotency and the hourly limit are per mailbox, shared with the §37 password login. An extra `mail_events` row of type `connect_send` records `actor_id = connect:<integrationId>:<externalUserId>`. Drafts and uploads are blocked for the same schema reason as §37.4.
+
+### 38.4 Integration credentials and launch codes
+
+**Secret** (`admin.ts`):
+- Format: `wmc_<integrationId>_<64 hex>`. Only its SHA-256 is stored, in `mail_client_integrations.secret_hash`.
+- It is shown **once**, on create or rotate. List and detail views never include it or its hash.
+- Auth: the id is parsed out of the secret, the row is loaded, and the hashes are compared in constant time.
+- A wrong secret, an unknown integration, a malformed header and a **disabled** integration all get the identical 401 body.
+- The secret is never logged. The admin error handler deliberately logs no headers or body.
+- Rotating the secret invalidates the old one immediately.
+
+**Launch codes** (`mail_launch_codes`):
+- Format: `<id>.<64 hex>` (256 bits), stored raw, the same convention as `mail_request_links.access_token`.
+- The row is looked up by id and the code compared in constant time. A wrong secret part doesn't burn a real code.
+- The code is claimed by **one conditional UPDATE** (`status = 'pending' AND expires_at > now` → `used`), so it is single-use even under concurrency. A test runs 10 simultaneous redemptions and gets exactly 1 session; a negative-control test shows that a naive check-then-update double-claims under the same shim.
+- It expires after 60 s; an expired code is marked `expired`.
+- Every failure is identical: no session, any existing connect cookie cleared, and a redirect to `/mail/connect?error=link` ("invalid or has expired").
+- If the integration is disabled when the code is redeemed, the code is burned.
+- The exchange response is `no-store` and `Referrer-Policy: no-referrer`.
+
+**A launch code is issued even when the user has zero grants.** Webmail then shows the "no email account assigned" message itself, so no integrating app has to build that copy. This was a judgment call.
+
+**`launchUrl` uses the origin the API was called on.** The session cookie is host-only and has to be set where `/mail/connect` is served, and the caller is the authenticated integration.
+
+**`returnUrl`** must be an absolute http(s) URL with no credentials. Its host is deliberately **not** restricted, because it is the integration's own panel. It is validated again before being rendered, and only ever shown as a link.
+
+### 38.5 Staff registry (spec §9, "master control")
+
+The staff side is the page `/email-services/integrations` (`MailIntegrationsPage.tsx`, linked from Email Services) plus the routes `/api/app/mail-integrations/*` (`integrations.ts`). Staff can:
+- list integrations;
+- create one, choosing a client and a name; the secret is shown once;
+- enable or disable it;
+- rotate the secret;
+- view the grantable set by source (client-hosted / attached by staff);
+- attach or detach mailboxes.
+
+Mutations are owner/admin only, using the same gate as Email Services. Every change is recorded in `mail_events` with `actor_id = staff:<id>`. Grant and revoke calls are recorded with `connect:<integration>:<grantedBy or user>`. **`granted_by` is not verified:** it is whatever user id the integration reports. That is the deliberate trust boundary: inside its own tenant, the client's panel is the authority on its own users.
+
+### 38.6 Frontend
+
+`ClientMailPage`'s workspace (folders, list, thread, composer) was **extracted unchanged** into `src/components/mail/OwnerMailWorkspace.tsx`. The workspace takes an `api` object, plus a new `canDelete` flag. `ClientMailPage` is now a thin wrapper that passes it `clientMailApi`, and its behavior is unchanged (regression-checked in a real browser). `MailConnectPage` passes `connectMailApi.forMailbox(id)` (`src/lib/connectMailApi.ts`), which calls only `/api/mail-connect/*`.
+
+The switcher follows the staff `MailSidebar` pattern: a `<select>` when there is more than one mailbox, a plain address when there is one, and the selection kept in the URL (`?mailbox=`). It drops the staff "All mailboxes (unified)" option, because permissions differ per mailbox here.
+
+Both new pages are code-split. `/mail/connect` is mounted outside `MeProvider`, like `/mail/client`.
+
+### 38.7 How this was tested
+
+**Unit and route tests.** `npm test` passes **188/188**: the 139 existing tests plus 49 new ones in `tests/mailConnect/`. They also pass with `EMAIL_TESTS_USE_CLIENTHUB_SCHEMA=1`, which runs them against the real clienthub schema. The new tests cover:
+- three-way isolation, with positive controls;
+- tampered, expired, duplicated, swapped and wrong-secret cookies;
+- cookie attributes, and that the payload carries identity only;
+- CSRF;
+- identical 401s, including for a disabled integration;
+- that the secret is never stored (a scan of every table);
+- the cross-tenant boundary (another client's mailbox, the staff mailbox, a suspended service, a service moved to another client);
+- staff attachments, scoped to one integration, and refused for another client's hosted mailbox;
+- upsert, default and revoke semantics;
+- validation;
+- launch issuance and `returnUrl` rules;
+- exchange single-use, expiry, identical failures, burn-on-disable, and the 10-way concurrency test with its negative control;
+- IDOR on every route;
+- each permission refused server-side with the database unchanged;
+- revocation and downgrade taking effect on the next request;
+- zero-grant and unavailable states;
+- attachment scoping;
+- the staff registry (once-only secret, rotation, owner/admin gate).
+
+**Mutation checks.** Each of these breaks caused tests to fail:
+
+| Break | Failing tests |
+|---|---|
+| Removing the signing prefix | 2 |
+| Dropping the `client_id` boundary | 3 |
+| A claim that ignores `status` | 4 |
+| Removing the per-permission check | 3 |
+| Not re-checking the integration status per request | 1 |
+| Allowing foreign payload fields | 1 |
+
+**Live end to end (36/36).** This ran `wrangler pages dev` on the built app, using the canonical clienthub schema in a local D1. It used the real `@altasme/webmail-connect` demo panel with a real secret issued by the staff API, real Chrome, and a local SMTP sink that checks credentials. Scenarios:
+- a fake Support Agent clicks Mail and lands inside `sales@altasme.com`'s inbox, read-only, with no Compose or Delete;
+- a direct send and a direct Trash call return **403** server-side;
+- another client's mailbox id returns 404;
+- the staff API returns 401 to a connect session;
+- a replayed launch URL shows "invalid or expired";
+- after send is granted, a real SMTP send goes out FROM `sales@altasme.com`;
+- after revocation the next request returns 404 and the page shows the spec's exact "no email account" message;
+- a disabled integration's launch fails gracefully;
+- the multi-mailbox switcher shows the default first, per-mailbox Compose, and a hand-typed ungranted id returns 404;
+- the staff registry page works, and rotation works;
+- staff attaching another client's mailbox returns 409;
+- `/mail/client` password login still works in the same browser, with both sessions coexisting;
+- at 390 px there is no overflow;
+- the connect page called only `/api/mail-connect/*`.
+
+All scratch files (wrangler config, `.dev.vars`, the local D1, the scripts) were removed from this checkout afterwards.
+
+**Build.** `npx tsc -p functions/tsconfig.json --noEmit`, `npm run build` and `npm run lint` are clean. No dependencies were added.
+
+### 38.8 Operator checklist
+
+1. Run the clienthub migration (four new tables, re-run `d1/schema.sql`) **before** deploying this. The routes query the tables unconditionally.
+2. Merge, then deploy as usual. There are no new env vars: it reuses `SESSION_SECRET`, and sending reuses `MAIL_SMTP_PROFILES_JSON`, which §37.8 already put on the Pages project.
+3. To run the reference demo against production:
+   - create a dedicated test client (the demo used `client_webmail_connect_demo`, "Webmail Connect Demo (Altaventures internal)", so as not to collide with a real client);
+   - create an integration for it under Email Services → Mail Integrations, and copy the secret;
+   - attach `sales@altasme.com`;
+   - then follow the `altasme/webmail-connect` README.
+4. When a real client panel adopts this, register it against **that** client. Its own hosted mailboxes are grantable automatically; attach anything else deliberately.
+
+### 38.9 Residual risks and open questions
+
+- **Login CSRF / session fixation by a hostile integration.** An integration that holds a valid secret could mint a launch for one of its own users and lure a victim into opening it. The victim would then be viewing that integration's mailbox. The impact is limited to mail the attacker could already see, but an OAuth-style `state` binding to the panel's browser session would close it. That needs cooperation from the panel, so it was not built speculatively.
+- **No rate limit on the admin API.** Every call requires a valid secret, but a leaked secret could mint codes freely until it is rotated or disabled.
+- **The panel is trusted for its own users.** If a panel's own authentication is compromised, Webmail can't tell. The tenant boundary still caps the damage to that client's grantable mailboxes.
+- **Shared send limit.** SSO sends share the per-mailbox hourly limit and idempotency namespace with §37 password-login sends from the same mailbox.
+- **Not run against production** (no live Cloudflare action was taken), and not against the real Z.com SMTP server.
