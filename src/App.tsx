@@ -47,12 +47,31 @@ function LegacyMyCafeClientRedirect() {
   return <Navigate to={`/mycafe/cafes/${id}`} replace />;
 }
 
+// mail.altasme.com's whole purpose is to be the client-facing entry point
+// (CLAUDE.md §36/§37), but a bare, unanchored visit to "/" on that host
+// otherwise falls through to "*" -> StaffApp -> MeProvider, which
+// immediately hard-redirects to WorkOS AuthKit the instant it finds no
+// staff session -- bouncing a client straight into a staff login screen
+// instead of /mail/client-login. This only changes what the bare root
+// does on that one host; clientkeeper.altasme.com's root, and every other
+// path on mail.altasme.com (most importantly /mail, the staff inbox), are
+// completely unaffected.
+const MAIL_CLIENT_HOST = "mail.altasme.com";
+
+function RootRoute() {
+  if (typeof window !== "undefined" && window.location.hostname.toLowerCase() === MAIL_CLIENT_HOST) {
+    return <Navigate to="/mail/client-login" replace />;
+  }
+  return <StaffApp />;
+}
+
 function App() {
   return (
     <Routes>
       {/* Client mailbox pages: no staff session involved. They call only /api/mail-client/*. */}
       <Route path="/mail/client-login" element={<Lazy><ClientMailLoginPage /></Lazy>} />
       <Route path="/mail/client" element={<Lazy><ClientMailPage /></Lazy>} />
+      <Route path="/" element={<RootRoute />} />
       <Route path="*" element={<StaffApp />} />
     </Routes>
   );
