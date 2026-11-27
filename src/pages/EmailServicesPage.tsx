@@ -52,6 +52,9 @@ export default function EmailServicesPage() {
           <Link to="/email-services/plans" className="rounded-full border border-ink/15 bg-white px-4 py-2 text-sm font-semibold text-ink/70 transition hover:bg-paper-alt">
             Plans
           </Link>
+          <Link to="/email-services/integrations" className="rounded-full border border-ink/15 bg-white px-4 py-2 text-sm font-semibold text-ink/70 transition hover:bg-paper-alt">
+            Mail Integrations
+          </Link>
           {canManage && (
             <button type="button" onClick={() => setCreating(true)} className="rounded-full bg-brand-blue px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#0b57cc]">
               + New Email Service

@@ -37,6 +37,10 @@ const EmailPlansPage = lazy(() => import("./pages/EmailPlansPage"));
 // MeProvider's bootstrap would redirect them to the staff WorkOS login.
 const ClientMailLoginPage = lazy(() => import("./pages/ClientMailLoginPage"));
 const ClientMailPage = lazy(() => import("./pages/ClientMailPage"));
+// [2026-11-27] Webmail Connect (CLAUDE.md §38): where a client admin
+// panel's user lands after clicking "Mail" there. Also outside MeProvider.
+const MailConnectPage = lazy(() => import("./pages/MailConnectPage"));
+const MailIntegrationsPage = lazy(() => import("./pages/MailIntegrationsPage"));
 
 function Lazy({ children }: { children: ReactNode }) {
   return <Suspense fallback={<p className="text-sm text-ink/40">Loading…</p>}>{children}</Suspense>;
@@ -71,6 +75,8 @@ function App() {
       {/* Client mailbox pages: no staff session involved. They call only /api/mail-client/*. */}
       <Route path="/mail/client-login" element={<Lazy><ClientMailLoginPage /></Lazy>} />
       <Route path="/mail/client" element={<Lazy><ClientMailPage /></Lazy>} />
+      {/* Webmail Connect: no staff session involved. Calls only /api/mail-connect/*. */}
+      <Route path="/mail/connect" element={<Lazy><MailConnectPage /></Lazy>} />
       <Route path="/" element={<RootRoute />} />
       <Route path="*" element={<StaffApp />} />
     </Routes>
@@ -96,9 +102,10 @@ function StaffApp() {
           <Route path="/discovery" element={<DiscoveryPage />} />
           <Route path="/presentations" element={<PresentationsPage />} />
           <Route path="/offers" element={<OffersPage />} />
-          {/* [2026-11-25] Client email hosting (plans, allowances, provisioning), CLAUDE.md §34. "plans" is matched before ":id". */}
+          {/* [2026-11-25] Client email hosting (plans, allowances, provisioning), CLAUDE.md §34. "plans" and "integrations" are matched before ":id". */}
           <Route path="/email-services" element={<Lazy><EmailServicesPage /></Lazy>} />
           <Route path="/email-services/plans" element={<Lazy><EmailPlansPage /></Lazy>} />
+          <Route path="/email-services/integrations" element={<Lazy><MailIntegrationsPage /></Lazy>} />
           <Route path="/email-services/:id" element={<Lazy><EmailServiceDetailPage /></Lazy>} />
           <Route path="/billing" element={<BillingPage />} />
           <Route path="/billing/new" element={<NewBillPage />} />
